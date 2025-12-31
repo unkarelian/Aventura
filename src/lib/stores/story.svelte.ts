@@ -1,9 +1,10 @@
-import type { Story, StoryEntry, Character, Location, Item, StoryBeat, Chapter, Checkpoint, MemoryConfig, StoryMode, StorySettings } from '$lib/types';
+import type { Story, StoryEntry, Character, Location, Item, StoryBeat, Chapter, Checkpoint, MemoryConfig, StoryMode, StorySettings, Entry } from '$lib/types';
 import { database } from '$lib/services/database';
 import { BUILTIN_TEMPLATES } from '$lib/services/templates';
 import { ui } from './ui.svelte';
 import type { ClassificationResult } from '$lib/services/ai/classifier';
 import { DEFAULT_MEMORY_CONFIG } from '$lib/services/ai/memory';
+import { convertToEntries, type ImportedEntry } from '$lib/services/lorebookImporter';
 import {
   eventBus,
   emitStoryLoaded,
@@ -795,6 +796,7 @@ class StoryStore {
     openingScene: string;
     systemPrompt: string;
     characters: Partial<Character>[];
+    importedEntries?: ImportedEntry[];
   }): Promise<Story> {
     log('createStoryFromWizard called', {
       title: data.title,
@@ -898,6 +900,20 @@ class StoryStore {
         metadata: { source: 'wizard' },
       });
       log('Added opening scene');
+    }
+
+    // Add imported lorebook entries
+    if (data.importedEntries && data.importedEntries.length > 0) {
+      const entries = convertToEntries(data.importedEntries, 'import');
+      for (const entryData of entries) {
+        const entry: Entry = {
+          ...entryData,
+          id: crypto.randomUUID(),
+          storyId,
+        };
+        await database.addEntry(entry);
+      }
+      log('Added imported entries:', data.importedEntries.length);
     }
 
     // Emit event

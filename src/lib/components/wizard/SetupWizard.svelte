@@ -12,7 +12,13 @@
     type GeneratedOpening,
     type Tense,
   } from '$lib/services/ai/scenario';
-  import type { StoryMode, POV } from '$lib/types';
+  import {
+    parseSillyTavernLorebook,
+    getImportSummary,
+    type ImportedEntry,
+    type LorebookImportResult,
+  } from '$lib/services/lorebookImporter';
+  import type { StoryMode, POV, EntryType } from '$lib/types';
   import {
     X,
     ChevronLeft,
@@ -33,6 +39,11 @@
     PenTool,
     Play,
     RefreshCw,
+    Upload,
+    FileJson,
+    Check,
+    AlertCircle,
+    Book,
   } from 'lucide-svelte';
 
   interface Props {
@@ -74,13 +85,17 @@
   let manualCharacterTraits = $state('');
   let showManualInput = $state(true); // Show manual input by default
 
-  // Step 5: Writing Style
+  // Step 2: Import Lorebook (optional - moved to early position)
+  let importedLorebook = $state<LorebookImportResult | null>(null);
+  let importedEntries = $state<ImportedEntry[]>([]);
+  let isImporting = $state(false);
+  let importError = $state<string | null>(null);
+  let importFileInput: HTMLInputElement | null = null;
+
+  // Step 6: Writing Style
   let selectedPOV = $state<POV>('first');
   let selectedTense = $state<Tense>('present');
   let tone = $state('immersive and engaging');
-
-  // Step 6: Import (optional)
-  // TODO: Implement lorebook/character card import
 
   // Step 7: Generate Opening
   let storyTitle = $state('');
@@ -129,11 +144,11 @@
   function canProceed(): boolean {
     switch (currentStep) {
       case 1: return true; // Mode always selected
-      case 2: return selectedGenre !== 'custom' || customGenre.trim().length > 0;
-      case 3: return settingSeed.trim().length > 0;
-      case 4: return true; // Protagonist is optional
-      case 5: return true; // Style always has defaults
-      case 6: return true; // Import is optional
+      case 2: return true; // Import is optional (can skip)
+      case 3: return selectedGenre !== 'custom' || customGenre.trim().length > 0;
+      case 4: return settingSeed.trim().length > 0;
+      case 5: return true; // Protagonist is optional
+      case 6: return true; // Style always has defaults
       case 7: return storyTitle.trim().length > 0;
       default: return false;
     }
@@ -358,8 +373,11 @@
     // Prepare story data
     const storyData = scenarioService.prepareStoryData(wizardData, generatedOpening);
 
-    // Create the story using the store
-    const newStory = await story.createStoryFromWizard(storyData);
+    // Create the story using the store, including any imported entries
+    const newStory = await story.createStoryFromWizard({
+      ...storyData,
+      importedEntries: importedEntries.length > 0 ? importedEntries : undefined,
+    });
 
     // Load and navigate to the story
     await story.loadStory(newStory.id);
@@ -370,13 +388,78 @@
   // Step title
   const stepTitles = [
     'Choose Your Mode',
+    'Import Lorebook (Optional)',
     'Select a Genre',
     'Describe Your Setting',
     'Create Your Character',
     'Writing Style',
-    'Import (Optional)',
     'Generate Opening',
   ];
+
+  // Lorebook import functions
+  function handleFileSelect(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    importError = null;
+    isImporting = true;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const content = e.target?.result as string;
+        const result = parseSillyTavernLorebook(content);
+
+        importedLorebook = result;
+        importedEntries = result.entries;
+
+        if (!result.success) {
+          importError = result.errors.join('; ') || 'Failed to parse lorebook';
+        }
+      } catch (err) {
+        importError = err instanceof Error ? err.message : 'Failed to read file';
+        importedLorebook = null;
+        importedEntries = [];
+      } finally {
+        isImporting = false;
+      }
+    };
+
+    reader.onerror = () => {
+      importError = 'Failed to read file';
+      isImporting = false;
+    };
+
+    reader.readAsText(file);
+  }
+
+  function clearImport() {
+    importedLorebook = null;
+    importedEntries = [];
+    importError = null;
+    if (importFileInput) {
+      importFileInput.value = '';
+    }
+  }
+
+  // Get entry type icon color
+  function getTypeColor(type: EntryType): string {
+    switch (type) {
+      case 'character': return 'text-blue-400';
+      case 'location': return 'text-green-400';
+      case 'item': return 'text-yellow-400';
+      case 'faction': return 'text-purple-400';
+      case 'concept': return 'text-cyan-400';
+      case 'event': return 'text-red-400';
+      default: return 'text-surface-400';
+    }
+  }
+
+  // Derived import summary
+  const importSummary = $derived(
+    importedEntries.length > 0 ? getImportSummary(importedEntries) : null
+  );
 </script>
 
 <div
@@ -477,7 +560,133 @@
         </div>
 
       {:else if currentStep === 2}
-        <!-- Step 2: Genre Selection -->
+        <!-- Step 2: Import Lorebook (Optional) -->
+        <div class="space-y-4">
+          <p class="text-surface-400">
+            Import an existing lorebook to populate your world with characters, locations, and lore.
+            This step is optional — you can skip it and add content later.
+          </p>
+
+          {#if !importedLorebook}
+            <!-- File Upload Area -->
+            <div
+              class="card bg-surface-900 border-dashed border-2 border-surface-600 p-8 text-center hover:border-accent-500/50 transition-colors cursor-pointer"
+              onclick={() => importFileInput?.click()}
+              onkeydown={(e) => e.key === 'Enter' && importFileInput?.click()}
+              role="button"
+              tabindex="0"
+            >
+              <input
+                type="file"
+                accept=".json"
+                class="hidden"
+                bind:this={importFileInput}
+                onchange={handleFileSelect}
+              />
+              {#if isImporting}
+                <Loader2 class="h-8 w-8 mx-auto mb-2 text-accent-400 animate-spin" />
+                <p class="text-surface-300">Importing...</p>
+              {:else}
+                <Upload class="h-8 w-8 mx-auto mb-2 text-surface-500" />
+                <p class="text-surface-300 font-medium">Click to upload a lorebook</p>
+                <p class="text-xs text-surface-500 mt-1">Supports SillyTavern lorebook format (.json)</p>
+              {/if}
+            </div>
+
+            {#if importError}
+              <div class="card bg-red-500/10 border-red-500/30 p-3 flex items-start gap-2">
+                <AlertCircle class="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
+                <p class="text-sm text-red-400">{importError}</p>
+              </div>
+            {/if}
+          {:else}
+            <!-- Import Results -->
+            <div class="card bg-surface-900 p-4 space-y-4">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <FileJson class="h-5 w-5 text-accent-400" />
+                  <span class="font-medium text-surface-100">
+                    Lorebook Imported
+                  </span>
+                  {#if importedLorebook.success}
+                    <Check class="h-4 w-4 text-green-400" />
+                  {/if}
+                </div>
+                <button
+                  class="text-xs text-surface-400 hover:text-surface-200"
+                  onclick={clearImport}
+                >
+                  Clear
+                </button>
+              </div>
+
+              {#if importSummary}
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                  <div class="card bg-surface-800 p-3">
+                    <div class="text-2xl font-bold text-surface-100">{importSummary.total}</div>
+                    <div class="text-xs text-surface-400">Total Entries</div>
+                  </div>
+                  <div class="card bg-surface-800 p-3">
+                    <div class="text-2xl font-bold text-surface-100">{importSummary.withContent}</div>
+                    <div class="text-xs text-surface-400">With Content</div>
+                  </div>
+                </div>
+
+                <!-- Type Breakdown -->
+                <div class="space-y-2">
+                  <h4 class="text-xs font-medium text-surface-400 uppercase">By Type</h4>
+                  <div class="flex flex-wrap gap-2">
+                    {#each Object.entries(importSummary.byType) as [type, count]}
+                      {#if count > 0}
+                        <span class="px-2 py-1 rounded-full bg-surface-700 text-xs {getTypeColor(type as EntryType)}">
+                          {type}: {count}
+                        </span>
+                      {/if}
+                    {/each}
+                  </div>
+                </div>
+
+                <!-- Entry Preview List -->
+                {#if importedEntries.length > 0}
+                  <div class="space-y-2">
+                    <h4 class="text-xs font-medium text-surface-400 uppercase">Preview (first 10)</h4>
+                    <div class="max-h-40 overflow-y-auto space-y-1">
+                      {#each importedEntries.slice(0, 10) as entry}
+                        <div class="flex items-center gap-2 text-sm p-2 rounded bg-surface-800">
+                          <span class="px-1.5 py-0.5 rounded text-xs {getTypeColor(entry.type)} bg-surface-700">
+                            {entry.type}
+                          </span>
+                          <span class="text-surface-200 truncate flex-1">{entry.name}</span>
+                          {#if entry.keywords.length > 0}
+                            <span class="text-xs text-surface-500">{entry.keywords.length} keywords</span>
+                          {/if}
+                        </div>
+                      {/each}
+                      {#if importedEntries.length > 10}
+                        <p class="text-xs text-surface-500 text-center py-2">
+                          ...and {importedEntries.length - 10} more entries
+                        </p>
+                      {/if}
+                    </div>
+                  </div>
+                {/if}
+              {/if}
+
+              {#if importedLorebook.warnings.length > 0}
+                <div class="text-xs text-amber-400">
+                  {importedLorebook.warnings.length} warning(s) during import
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          <p class="text-xs text-surface-500 text-center">
+            Imported entries will be added to your story's lorebook after creation.
+          </p>
+        </div>
+
+      {:else if currentStep === 3}
+        <!-- Step 3: Genre Selection -->
         <div class="space-y-4">
           <p class="text-surface-400">What kind of story do you want to tell?</p>
           <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -514,8 +723,8 @@
           {/if}
         </div>
 
-      {:else if currentStep === 3}
-        <!-- Step 3: Setting -->
+      {:else if currentStep === 4}
+        <!-- Step 4: Setting -->
         <div class="space-y-4">
           <p class="text-surface-400">
             Describe your world in a few sentences. The AI will expand it into a rich setting.
@@ -587,8 +796,8 @@
           {/if}
         </div>
 
-      {:else if currentStep === 4}
-        <!-- Step 4: Protagonist/Characters -->
+      {:else if currentStep === 5}
+        <!-- Step 5: Protagonist/Characters -->
         <div class="space-y-4">
           <p class="text-surface-400">
             {selectedMode === 'adventure'
@@ -599,7 +808,7 @@
           {#if !expandedSetting}
             <div class="card bg-amber-500/10 border-amber-500/30 p-4">
               <p class="text-sm text-amber-400">
-                Go back to Step 3 and expand your setting first. This helps create a more fitting character.
+                Go back to Step 4 and expand your setting first. This helps create a more fitting character.
               </p>
             </div>
           {:else}
@@ -825,8 +1034,8 @@
           {/if}
         </div>
 
-      {:else if currentStep === 5}
-        <!-- Step 5: Writing Style -->
+      {:else if currentStep === 6}
+        <!-- Step 6: Writing Style -->
         <div class="space-y-6">
           <p class="text-surface-400">Customize how your story will be written.</p>
 
@@ -893,30 +1102,6 @@
           </div>
         </div>
 
-      {:else if currentStep === 6}
-        <!-- Step 6: Import (Optional) -->
-        <div class="space-y-4">
-          <p class="text-surface-400">
-            Import existing character cards or lorebooks to populate your world. (Optional)
-          </p>
-
-          <div class="card bg-surface-900 border-dashed border-2 border-surface-600 p-8 text-center">
-            <div class="text-surface-500 mb-2">
-              <Sparkles class="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>Import feature coming soon</p>
-              <p class="text-xs mt-1">Support for SillyTavern character cards and lorebooks</p>
-            </div>
-          </div>
-
-          <p class="text-sm text-surface-500 text-center">
-            You can skip this step and add content later.
-          </p>
-
-          <p class="text-xs text-surface-500 text-center">
-            Tip: To customize AI models and prompts, go to Settings → Advanced tab.
-          </p>
-        </div>
-
       {:else if currentStep === 7}
         <!-- Step 7: Generate Opening -->
         <div class="space-y-4">
@@ -980,6 +1165,12 @@
               {/if}
               {#if protagonist}
                 <div class="col-span-2"><strong>Protagonist:</strong> {protagonist.name}</div>
+              {/if}
+              {#if importedEntries.length > 0}
+                <div class="col-span-2 flex items-center gap-2">
+                  <Book class="h-4 w-4 text-accent-400" />
+                  <strong>Lorebook:</strong> {importedEntries.length} entries to import
+                </div>
               {/if}
             </div>
           </div>
