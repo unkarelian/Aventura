@@ -285,6 +285,7 @@
         currentLocation: story.currentLocation,
         chapters: story.chapters,
         memoryConfig: story.memoryConfig,
+        lorebookEntries: story.lorebookEntries,
       };
 
       log('World state built', {
@@ -293,39 +294,83 @@
         items: worldState.items.length,
         storyBeats: worldState.storyBeats.length,
         chapters: worldState.chapters.length,
+        lorebookEntries: worldState.lorebookEntries.length,
       });
 
-      // Phase 0.5: Memory retrieval - get relevant chapter context
-      // Per design doc section 3.1.3: Retrieval Flow
+      // Phase 0.5: Pre-generation retrieval (parallel)
+      // Per design doc: Memory retrieval and Entry retrieval run in parallel
       let retrievedChapterContext: string | null = null;
-      if (story.chapters.length > 0 && story.memoryConfig.enableRetrieval) {
-        try {
-          log('Starting memory retrieval...', { chaptersCount: story.chapters.length });
-          const retrievalDecision = await aiService.decideRetrieval(
-            userActionContent,
-            story.visibleEntries.slice(-5), // Recent visible entries for context
-            story.chapters,
-            story.memoryConfig
-          );
+      let lorebookContext: string | null = null;
 
-          if (retrievalDecision.relevantChapterIds.length > 0) {
-            retrievedChapterContext = aiService.buildRetrievedContextBlock(
+      // Build parallel retrieval tasks
+      const retrievalTasks: Promise<void>[] = [];
+
+      // Task 1: Memory retrieval - get relevant chapter context
+      if (story.chapters.length > 0 && story.memoryConfig.enableRetrieval) {
+        retrievalTasks.push((async () => {
+          try {
+            log('Starting memory retrieval...', { chaptersCount: story.chapters.length });
+            const retrievalDecision = await aiService.decideRetrieval(
+              userActionContent,
+              story.visibleEntries.slice(-5),
               story.chapters,
-              retrievalDecision
+              story.memoryConfig
             );
-            log('Memory retrieval complete', {
-              relevantChapters: retrievalDecision.relevantChapterIds.length,
-              contextLength: retrievedChapterContext?.length ?? 0,
-            });
-          } else {
-            log('No relevant chapters found for retrieval');
+
+            if (retrievalDecision.relevantChapterIds.length > 0) {
+              retrievedChapterContext = aiService.buildRetrievedContextBlock(
+                story.chapters,
+                retrievalDecision
+              );
+              log('Memory retrieval complete', {
+                relevantChapters: retrievalDecision.relevantChapterIds.length,
+                contextLength: retrievedChapterContext?.length ?? 0,
+              });
+            } else {
+              log('No relevant chapters found for retrieval');
+            }
+          } catch (retrievalError) {
+            log('Memory retrieval failed (non-fatal)', retrievalError);
+            console.warn('Memory retrieval failed:', retrievalError);
           }
-        } catch (retrievalError) {
-          // Retrieval failure shouldn't block generation
-          log('Memory retrieval failed (non-fatal)', retrievalError);
-          console.warn('Memory retrieval failed:', retrievalError);
-        }
+        })());
       }
+
+      // Task 2: Lorebook entry retrieval (Tier 3 LLM selection runs here)
+      if (story.lorebookEntries.length > 0) {
+        retrievalTasks.push((async () => {
+          try {
+            log('Starting lorebook retrieval...', { entriesCount: story.lorebookEntries.length });
+            const entryResult = await aiService.getRelevantLorebookEntries(
+              story.lorebookEntries,
+              userActionContent,
+              story.visibleEntries.slice(-10)
+            );
+            lorebookContext = entryResult.contextBlock;
+            log('Lorebook retrieval complete', {
+              tier1: entryResult.tier1.length,
+              tier2: entryResult.tier2.length,
+              tier3: entryResult.tier3.length,
+              contextLength: lorebookContext?.length ?? 0,
+            });
+          } catch (entryError) {
+            log('Lorebook retrieval failed (non-fatal)', entryError);
+            console.warn('Lorebook retrieval failed:', entryError);
+          }
+        })());
+      }
+
+      // Wait for all retrieval tasks to complete (parallel execution)
+      if (retrievalTasks.length > 0) {
+        log('Waiting for parallel retrieval tasks...', { taskCount: retrievalTasks.length });
+        await Promise.all(retrievalTasks);
+        log('All retrieval tasks complete');
+      }
+
+      // Combine retrieved contexts
+      const combinedRetrievedContext = [retrievedChapterContext, lorebookContext]
+        .filter(Boolean)
+        .join('\n') || null;
 
       let fullResponse = '';
       let chunkCount = 0;
@@ -339,7 +384,8 @@
         hasStyleReview: !!ui.lastStyleReview,
         visibleEntries: story.visibleEntries.length,
         totalEntries: story.entries.length,
-        hasRetrievedContext: !!retrievedChapterContext,
+        hasRetrievedContext: !!combinedRetrievedContext,
+        hasLorebookContext: !!lorebookContext,
       });
       for await (const chunk of aiService.streamResponse(
         story.visibleEntries,
@@ -347,7 +393,7 @@
         currentStoryRef,
         true,
         ui.lastStyleReview,
-        retrievedChapterContext
+        combinedRetrievedContext
       )) {
         chunkCount++;
         if (chunk.content) {

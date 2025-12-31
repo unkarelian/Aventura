@@ -9,6 +9,7 @@ import { StyleReviewerService, type StyleReviewResult } from './styleReviewer';
 import { LoreManagementService, type LoreManagementSettings } from './loreManagement';
 import { AgenticRetrievalService, type AgenticRetrievalSettings, type AgenticRetrievalResult } from './agenticRetrieval';
 import { ContextBuilder, type ContextResult, type ContextConfig, DEFAULT_CONTEXT_CONFIG } from './context';
+import { EntryRetrievalService, type EntryRetrievalResult } from './entryRetrieval';
 import type { Message, GenerationResponse, StreamChunk } from './types';
 import type { Story, StoryEntry, Character, Location, Item, StoryBeat, Chapter, MemoryConfig, Entry, LoreManagementResult } from '$lib/types';
 
@@ -28,6 +29,7 @@ interface WorldState {
   currentLocation?: Location;
   chapters?: Chapter[];
   memoryConfig?: MemoryConfig;
+  lorebookEntries?: Entry[];
 }
 
 class AIService {
@@ -141,9 +143,14 @@ class AIService {
     const userInput = lastUserEntry?.content || '';
 
     // Build tiered context if enabled
+    // Note: Lorebook entry retrieval is done in ActionInput (parallel with memory retrieval)
+    // and passed via retrievedChapterContext parameter
     let tieredContextBlock: string | undefined;
+
     if (useTieredContext && userInput) {
       try {
+        // Build world state context (characters, locations, items, story beats)
+        // Lorebook context is already included in retrievedChapterContext from ActionInput
         const contextResult = await this.buildTieredContext(
           worldState,
           userInput,
@@ -445,6 +452,44 @@ class AIService {
     );
 
     log('buildTieredContext complete', {
+      tier1: result.tier1.length,
+      tier2: result.tier2.length,
+      tier3: result.tier3.length,
+      total: result.all.length,
+    });
+
+    return result;
+  }
+
+  /**
+   * Get relevant lorebook entries using tiered injection.
+   * Per design doc section 3.2.3: Tiered Injection for Entries
+   */
+  async getRelevantLorebookEntries(
+    entries: Entry[],
+    userInput: string,
+    recentStoryEntries: StoryEntry[]
+  ): Promise<EntryRetrievalResult> {
+    log('getRelevantLorebookEntries called', {
+      totalEntries: entries.length,
+      userInputLength: userInput.length,
+    });
+
+    let provider: OpenRouterProvider | null = null;
+    try {
+      provider = this.getProvider();
+    } catch {
+      log('No provider available, skipping Tier 3 LLM selection for entries');
+    }
+
+    const entryService = new EntryRetrievalService(provider);
+    const result = await entryService.getRelevantEntries(
+      entries,
+      userInput,
+      recentStoryEntries
+    );
+
+    log('getRelevantLorebookEntries complete', {
       tier1: result.tier1.length,
       tier2: result.tier2.length,
       tier3: result.tier3.length,

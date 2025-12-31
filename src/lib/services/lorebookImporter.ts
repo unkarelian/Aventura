@@ -194,7 +194,7 @@ export async function classifyEntriesWithLLM(
   }
 
   const provider = new OpenRouterProvider(apiKey);
-  const BATCH_SIZE = 30;
+  const BATCH_SIZE = 50;
   const classifiedEntries = [...entries];
 
   log('Starting LLM classification', { totalEntries: entries.length });

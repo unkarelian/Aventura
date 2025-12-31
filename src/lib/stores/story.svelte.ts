@@ -31,6 +31,9 @@ class StoryStore {
   currentStory = $state<Story | null>(null);
   entries = $state<StoryEntry[]>([]);
 
+  // Lorebook entries (per design doc section 3.2)
+  lorebookEntries = $state<Entry[]>([]);
+
   // World state for current story
   characters = $state<Character[]>([]);
   locations = $state<Location[]>([]);
@@ -136,7 +139,7 @@ class StoryStore {
     this.currentStory = story;
 
     // Load all related data in parallel
-    const [entries, characters, locations, items, storyBeats, chapters, checkpoints] = await Promise.all([
+    const [entries, characters, locations, items, storyBeats, chapters, checkpoints, lorebookEntries] = await Promise.all([
       database.getStoryEntries(storyId),
       database.getCharacters(storyId),
       database.getLocations(storyId),
@@ -144,6 +147,7 @@ class StoryStore {
       database.getStoryBeats(storyId),
       database.getChapters(storyId),
       database.getCheckpoints(storyId),
+      database.getEntries(storyId),
     ]);
 
     this.entries = entries;
@@ -153,11 +157,13 @@ class StoryStore {
     this.storyBeats = storyBeats;
     this.chapters = chapters;
     this.checkpoints = checkpoints;
+    this.lorebookEntries = lorebookEntries;
 
     log('Story loaded', {
       id: storyId,
       mode: story.mode,
       entries: entries.length,
+      lorebookEntries: lorebookEntries.length,
       chapters: chapters.length,
       checkpoints: checkpoints.length,
     });
@@ -663,6 +669,7 @@ class StoryStore {
   clearCurrentStory(): void {
     this.currentStory = null;
     this.entries = [];
+    this.lorebookEntries = [];
     this.characters = [];
     this.locations = [];
     this.items = [];
