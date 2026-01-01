@@ -3,6 +3,7 @@
   import { story } from '$lib/stores/story.svelte';
   import { ui } from '$lib/stores/ui.svelte';
   import { User, BookOpen, Info, Pencil, Trash2, Check, X, RefreshCw } from 'lucide-svelte';
+  import { parseMarkdown } from '$lib/utils/markdown';
 
   let { entry }: { entry: StoryEntry } = $props();
 
@@ -181,8 +182,8 @@
           </div>
         </div>
       {:else}
-        <div class="story-text whitespace-pre-wrap">
-          {entry.content}
+        <div class="story-text prose-content">
+          {@html parseMarkdown(entry.content)}
         </div>
         {#if isErrorEntry}
           <button

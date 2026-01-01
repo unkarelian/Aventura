@@ -543,6 +543,163 @@
 }
 
 /* =============================================
+   MARKDOWN/PROSE CONTENT STYLING
+   ============================================= */
+
+.prose-content {
+  /* Paragraphs */
+  p {
+    @apply mb-4 last:mb-0;
+  }
+
+  /* Headers */
+  h1 {
+    @apply text-2xl font-bold mb-4 mt-6 first:mt-0;
+    color: var(--text-primary);
+  }
+
+  h2 {
+    @apply text-xl font-bold mb-3 mt-5 first:mt-0;
+    color: var(--text-primary);
+  }
+
+  h3 {
+    @apply text-lg font-semibold mb-2 mt-4 first:mt-0;
+    color: var(--text-primary);
+  }
+
+  h4, h5, h6 {
+    @apply text-base font-semibold mb-2 mt-3 first:mt-0;
+    color: var(--text-primary);
+  }
+
+  /* Bold and italic */
+  strong, b {
+    @apply font-bold;
+    color: var(--text-primary);
+  }
+
+  em, i {
+    @apply italic;
+  }
+
+  /* Links */
+  a {
+    color: var(--text-accent);
+    @apply underline hover:no-underline;
+  }
+
+  /* Lists */
+  ul {
+    @apply list-disc list-inside mb-4 space-y-1;
+  }
+
+  ol {
+    @apply list-decimal list-inside mb-4 space-y-1;
+  }
+
+  li {
+    @apply leading-relaxed;
+  }
+
+  li > ul,
+  li > ol {
+    @apply ml-4 mt-1 mb-0;
+  }
+
+  /* Blockquotes */
+  blockquote {
+    @apply border-l-4 pl-4 my-4 italic;
+    border-color: var(--border-secondary);
+    color: var(--text-muted);
+  }
+
+  /* Inline code */
+  code {
+    @apply px-1.5 py-0.5 rounded text-sm font-mono;
+    background-color: var(--bg-tertiary);
+    color: var(--text-accent);
+  }
+
+  /* Code blocks */
+  pre {
+    @apply p-4 rounded-lg my-4 overflow-x-auto;
+    background-color: var(--bg-tertiary);
+  }
+
+  pre code {
+    @apply p-0 bg-transparent;
+    color: var(--text-primary);
+  }
+
+  /* Horizontal rule */
+  hr {
+    @apply my-6 border-0 h-px;
+    background-color: var(--border-primary);
+  }
+
+  /* Tables */
+  table {
+    @apply w-full border-collapse my-4;
+  }
+
+  th, td {
+    @apply border px-3 py-2 text-left;
+    border-color: var(--border-primary);
+  }
+
+  th {
+    background-color: var(--bg-tertiary);
+    @apply font-semibold;
+  }
+
+  /* Images */
+  img {
+    @apply max-w-full h-auto rounded my-4;
+  }
+
+  /* Strikethrough */
+  del {
+    @apply line-through opacity-60;
+  }
+
+  /* Task lists (GFM) */
+  input[type="checkbox"] {
+    @apply mr-2;
+  }
+}
+
+/* Retro Console theme prose overrides */
+[data-theme="retro-console"] .prose-content {
+  h1, h2, h3, h4, h5, h6 {
+    text-shadow: var(--crt-text-glow);
+  }
+
+  code {
+    border: 1px solid var(--color-retro-green-muted);
+  }
+
+  pre {
+    border: 2px solid var(--color-retro-green-muted);
+    box-shadow: var(--retro-border-glow);
+  }
+
+  blockquote {
+    border-color: var(--color-retro-green-muted);
+  }
+
+  a {
+    color: var(--color-retro-cyan);
+    text-shadow: var(--crt-cyan-glow);
+  }
+
+  strong, b {
+    color: var(--color-retro-green);
+    text-shadow: var(--crt-text-glow);
+  }
+}
+
+/* =============================================
    RETRO CONSOLE THEME ENHANCEMENTS
    ============================================= */
 
