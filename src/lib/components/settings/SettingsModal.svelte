@@ -408,11 +408,11 @@
             >
               <option value="dark">Dark</option>
               <option value="light">Light</option>
-              <option value="ps2-lain">PS2 Lain (CRT)</option>
+              <option value="retro-console">Retro Console</option>
             </select>
-            {#if settings.uiSettings.theme === 'ps2-lain'}
+            {#if settings.uiSettings.theme === 'retro-console'}
               <p class="mt-1 text-xs text-surface-400">
-                Inspired by Serial Experiments Lain PS2 game aesthetics
+                CRT aesthetic inspired by PS2-era games and Serial Experiments Lain
               </p>
             {/if}
           </div>

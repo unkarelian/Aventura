@@ -522,7 +522,7 @@ class SettingsStore {
     document.documentElement.setAttribute('data-theme', theme);
 
     // Also maintain legacy 'dark' class for any Tailwind dark: utilities
-    if (theme === 'dark' || theme === 'ps2-lain') {
+    if (theme === 'dark' || theme === 'retro-console') {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');

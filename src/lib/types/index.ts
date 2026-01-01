@@ -365,7 +365,7 @@ export interface APISettings {
   enableThinking: boolean; // Enable extended thinking/reasoning for supported models
 }
 
-export type ThemeId = 'dark' | 'light' | 'ps2-lain';
+export type ThemeId = 'dark' | 'light' | 'retro-console';
 
 export interface UISettings {
   theme: ThemeId;
