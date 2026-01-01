@@ -212,16 +212,16 @@ export class EntryRetrievalService {
       .slice(-5)
       .map(e => {
         const prefix = e.type === 'user_action' ? '[ACTION]' : '[NARRATION]';
-        return `${prefix}: ${e.content.substring(0, 300)}`;
+        return `${prefix}: ${e.content.substring(0, 400)}`;
       })
       .join('\n\n');
 
-    // Build entry list with IDs for reliable selection
+    // Build numbered entry list (simple 1, 2, 3...)
     const entryList = availableEntries
-      .map(e => `- ID:${e.id} | [${e.type.toUpperCase()}] "${e.name}": ${e.description.substring(0, 200)}${e.description.length > 200 ? '...' : ''}`)
+      .map((e, i) => `${i + 1}. [${e.type.toUpperCase()}] "${e.name}": ${e.description.substring(0, 250)}${e.description.length > 250 ? '...' : ''}`)
       .join('\n');
 
-    const prompt = `You are a lorebook retrieval system. Select ALL entries that are relevant to the current narrative context.
+    const prompt = `You are a lorebook retrieval system. Your job is to select entries that could be relevant to the narrator.
 
 ## Current Scene
 ${recentContent || '(Story just started)'}
@@ -232,62 +232,68 @@ ${recentContent || '(Story just started)'}
 ## Available Lorebook Entries
 ${entryList}
 
-## Task
-Identify ALL entries that should be included in the narrator's context. Be INCLUSIVE - select any entry that:
-- Is directly mentioned or referenced
-- Describes a character who is present or might appear
-- Describes the current or nearby location
-- Contains relevant world-building, lore, or background information
-- Might inform how the narrator should respond
-- Has any connection to the current scene or action
+## Instructions
+Select ALL entries that could possibly be relevant. When in doubt, INCLUDE the entry. It's better to include too much context than too little.
 
-Return a JSON array of entry IDs (the ID: values) for ALL relevant entries.
-Format: ["id1", "id2", "id3"]
+Include entries if they:
+- Are mentioned or referenced in any way
+- Describe characters who are or could be present
+- Describe the current location or nearby areas
+- Contain world-building, lore, magic systems, or background info
+- Describe factions, organizations, or groups involved
+- Could inform the narrator's response in any way
+- Have ANY connection to the current situation
 
-If no entries are relevant, return: []`;
+Return ONLY a JSON array of numbers: [1, 2, 3, ...]
+Include ALL potentially relevant entries. Be generous with inclusion.`;
 
     try {
       const response = await this.provider.generateResponse({
         messages: [{ role: 'user', content: prompt }],
         model: this.config.tier3Model,
         temperature: 0.2,
-        maxTokens: 500, // More tokens for potentially many IDs
+        maxTokens: 300,
       });
 
       log('LLM selection response:', response.content);
 
-      // Parse response - look for JSON array of strings (IDs)
-      let selectedIds: string[] = [];
+      // Parse response - look for JSON array of numbers
+      let selectedIndices: number[] = [];
 
       // Try to extract JSON array
-      const jsonMatch = response.content.match(/\[[\s\S]*?\]/);
+      const jsonMatch = response.content.match(/\[[\d,\s]*\]/);
       if (jsonMatch) {
         try {
           const parsed = JSON.parse(jsonMatch[0]);
           if (Array.isArray(parsed)) {
-            selectedIds = parsed.map(id => String(id).trim());
+            selectedIndices = parsed.filter(n => typeof n === 'number' && n > 0);
           }
         } catch {
-          log('Failed to parse JSON array, trying line-by-line');
+          log('Failed to parse JSON array');
         }
       }
 
-      // Fallback: extract IDs mentioned in the response
-      if (selectedIds.length === 0) {
-        const idMatches = response.content.matchAll(/ID:([a-zA-Z0-9_-]+)/g);
-        for (const match of idMatches) {
-          selectedIds.push(match[1]);
+      // Fallback: extract any numbers from the response
+      if (selectedIndices.length === 0) {
+        const numMatches = response.content.matchAll(/\b(\d+)\b/g);
+        for (const match of numMatches) {
+          const num = parseInt(match[1], 10);
+          if (num > 0 && num <= availableEntries.length) {
+            selectedIndices.push(num);
+          }
         }
+        // Deduplicate
+        selectedIndices = [...new Set(selectedIndices)];
       }
 
-      log('Selected IDs:', selectedIds);
+      log('Selected indices:', selectedIndices);
 
-      // Map IDs back to entries
+      // Map indices back to entries (1-indexed)
       const result: RetrievedEntry[] = [];
-      const idSet = new Set(selectedIds);
 
-      for (const entry of availableEntries) {
-        if (idSet.has(entry.id)) {
+      for (const idx of selectedIndices) {
+        const entry = availableEntries[idx - 1];
+        if (entry) {
           result.push({
             entry,
             tier: 2,
