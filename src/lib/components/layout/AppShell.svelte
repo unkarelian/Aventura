@@ -27,7 +27,7 @@
 </script>
 
 <div
-  class="flex h-screen w-screen bg-surface-900"
+  class="app-shell flex h-screen w-screen bg-surface-900"
   use:swipe={{ onSwipeRight: handleSwipeRight, onSwipeLeft: handleSwipeLeft, threshold: 50 }}
 >
   <!-- Mobile sidebar overlay (tap to close) -->
@@ -79,6 +79,25 @@
 </div>
 
 <style>
+  /* App shell - add top padding for mobile status bar */
+  .app-shell {
+    padding-top: env(safe-area-inset-top, 0);
+  }
+
+  /* Mobile: add fallback padding for Android status bar */
+  @media (max-width: 768px) {
+    .app-shell {
+      padding-top: max(env(safe-area-inset-top, 0px), 28px);
+    }
+  }
+
+  /* Desktop: no top padding needed */
+  @media (min-width: 769px) {
+    .app-shell {
+      padding-top: 0;
+    }
+  }
+
   /* Mobile sidebar overlay - visible only on touch devices */
   .mobile-sidebar-overlay {
     display: none;
@@ -109,18 +128,20 @@
   @media (max-width: 768px) {
     .mobile-sidebar-overlay {
       display: block;
+      top: max(env(safe-area-inset-top, 0px), 28px);
     }
 
     .sidebar-container {
       position: fixed;
       left: 0;
-      top: 0;
-      height: 100%;
+      top: max(env(safe-area-inset-top, 0px), 28px);
+      height: calc(100% - max(env(safe-area-inset-top, 0px), 28px));
       animation: slide-in 0.2s ease-out;
     }
 
     .swipe-edge-zone {
       width: 30px;
+      top: max(env(safe-area-inset-top, 0px), 28px);
     }
   }
 

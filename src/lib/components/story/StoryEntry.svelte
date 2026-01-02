@@ -125,10 +125,31 @@
   }
 </script>
 
-<div class="group rounded-lg border-l-4 p-3 sm:p-4 {styles[entry.type]} relative">
+<div class="group rounded-lg border-l-4 p-3 sm:p-4 {styles[entry.type]}">
   <div class="flex items-start gap-3">
-    <div class="mt-0.5 rounded-full bg-surface-700 p-1.5">
-      <Icon class="h-4 w-4 text-surface-400" />
+    <div class="flex flex-col items-center gap-1">
+      <div class="rounded-full bg-surface-700 p-1.5">
+        <Icon class="h-4 w-4 text-surface-400" />
+      </div>
+      <!-- Edit/Delete buttons below icon (always visible on mobile, hover on desktop) -->
+      {#if !isEditing && !isDeleting && entry.type !== 'system'}
+        <div class="flex flex-col gap-1 sm:opacity-0 transition-opacity group-hover:opacity-100">
+          <button
+            onclick={startEdit}
+            class="rounded p-1.5 text-surface-400 hover:bg-surface-600 hover:text-surface-200 min-h-[32px] min-w-[32px] sm:min-h-0 sm:min-w-0 flex items-center justify-center"
+            title="Edit entry"
+          >
+            <Pencil class="h-3.5 w-3.5" />
+          </button>
+          <button
+            onclick={() => isDeleting = true}
+            class="rounded p-1.5 text-surface-400 hover:bg-red-500/20 hover:text-red-400 min-h-[32px] min-w-[32px] sm:min-h-0 sm:min-w-0 flex items-center justify-center"
+            title="Delete entry"
+          >
+            <Trash2 class="h-3.5 w-3.5" />
+          </button>
+        </div>
+      {/if}
     </div>
     <div class="flex-1">
       {#if entry.type === 'user_action'}
@@ -202,25 +223,5 @@
         {/if}
       {/if}
     </div>
-
-    <!-- Edit/Delete buttons (always visible on mobile, hover on desktop) -->
-    {#if !isEditing && !isDeleting && entry.type !== 'system'}
-      <div class="absolute right-2 top-2 flex gap-1 sm:opacity-0 transition-opacity group-hover:opacity-100">
-        <button
-          onclick={startEdit}
-          class="rounded p-2 sm:p-1.5 text-surface-400 hover:bg-surface-600 hover:text-surface-200 min-h-[36px] min-w-[36px] sm:min-h-0 sm:min-w-0 flex items-center justify-center"
-          title="Edit entry"
-        >
-          <Pencil class="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-        </button>
-        <button
-          onclick={() => isDeleting = true}
-          class="rounded p-2 sm:p-1.5 text-surface-400 hover:bg-red-500/20 hover:text-red-400 min-h-[36px] min-w-[36px] sm:min-h-0 sm:min-w-0 flex items-center justify-center"
-          title="Delete entry"
-        >
-          <Trash2 class="h-4 w-4 sm:h-3.5 sm:w-3.5" />
-        </button>
-      </div>
-    {/if}
   </div>
 </div>

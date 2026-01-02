@@ -18,13 +18,16 @@
         <item name="colorOnBackground">@color/colorOnBackground</item>
         <item name="colorOnSurface">@color/colorOnSurface</item>
 
-        <!-- Status bar and navigation bar -->
-        <item name="android:statusBarColor">@color/statusBarColor</item>
-        <item name="android:navigationBarColor">@color/navigationBarColor</item>
+        <!-- Status bar and navigation bar match app theme -->
+        <item name="android:statusBarColor">@color/surface_900</item>
+        <item name="android:navigationBarColor">@color/surface_900</item>
 
         <!-- Window attributes -->
         <item name="android:windowBackground">@color/colorBackground</item>
         <item name="android:windowLightStatusBar" tools:targetApi="m">false</item>
         <item name="android:windowLightNavigationBar" tools:targetApi="o_mr1">false</item>
+
+        <!-- Fit content within system bars -->
+        <item name="android:fitsSystemWindows">true</item>
     </style>
 </resources>

@@ -844,9 +844,20 @@
   display: none;
 }
 
-/* Safe area padding utility */
+/* Safe area padding utilities */
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+/* Edge-to-edge support for Android */
+html, body {
+  /* Ensure the app fills the full viewport including system bars */
+  min-height: 100vh;
+  min-height: 100dvh; /* Dynamic viewport height for mobile */
 }
 
 /* Touch-friendly tap targets (minimum 44px per Apple/Google guidelines) */
