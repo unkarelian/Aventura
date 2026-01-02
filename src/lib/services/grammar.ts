@@ -1,4 +1,6 @@
-import { LocalLinter, binary, type Lint, type Suggestion, type LintConfig } from 'harper.js';
+import { LocalLinter, BinaryModule, type Lint, type Suggestion, type LintConfig } from 'harper.js';
+// @ts-ignore - Vite handles this import
+import wasmUrl from 'harper.js/dist/harper_wasm_bg.wasm?url';
 
 const DEBUG = false;
 
@@ -29,6 +31,11 @@ class GrammarService {
     this.setupPromise = (async () => {
       try {
         log('Initializing Harper linter...');
+
+        // Load the WASM binary using Vite's URL import
+        const binary = BinaryModule.create(wasmUrl);
+        await binary.setup();
+
         this.linter = new LocalLinter({ binary });
         await this.linter.setup();
 
