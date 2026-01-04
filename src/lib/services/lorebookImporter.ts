@@ -187,14 +187,16 @@ export async function classifyEntriesWithLLM(
 ): Promise<ImportedEntry[]> {
   if (entries.length === 0) return entries;
 
-  const apiKey = settings.apiSettings.openaiApiKey;
-  const openaiApiURL = settings.apiSettings.openaiApiURL;
-  if (!apiKey) {
+  // Use the main narrative profile for lorebook classification
+  const profileId = settings.apiSettings.mainNarrativeProfileId;
+  const apiSettings = settings.getApiSettingsForProfile(profileId);
+
+  if (!apiSettings.openaiApiKey) {
     log('No API key available, skipping LLM classification');
     return entries;
   }
 
-  const provider = new OpenAIProvider(settings.apiSettings);
+  const provider = new OpenAIProvider(apiSettings);
   const BATCH_SIZE = 50;
   const MAX_CONCURRENT = 5;
   const classifiedEntries = [...entries];

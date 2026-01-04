@@ -1,4 +1,4 @@
-import { settings } from '$lib/stores/settings.svelte';
+import { settings, DEFAULT_OPENROUTER_PROFILE_ID } from '$lib/stores/settings.svelte';
 import { OpenAIProvider, OPENROUTER_API_URL } from './openrouter';
 import type { Message } from './types';
 import type { StoryMode, POV, Character, Location, Item } from '$lib/types';
@@ -22,6 +22,7 @@ export type Tense = 'past' | 'present';
 
 // Advanced settings for customizing generation processes
 export interface ProcessSettings {
+  profileId?: string | null;  // API profile to use (null = use default profile)
   model?: string;
   systemPrompt?: string;
   temperature?: number;
@@ -144,6 +145,7 @@ Respond with valid JSON:
 export function getDefaultAdvancedSettings(): AdvancedWizardSettings {
   return {
     settingExpansion: {
+      profileId: DEFAULT_OPENROUTER_PROFILE_ID,
       model: 'deepseek/deepseek-v3.2', // deepseek for world elaboration
       systemPrompt: DEFAULT_PROMPTS.settingExpansion,
       temperature: 0.3,
@@ -151,6 +153,7 @@ export function getDefaultAdvancedSettings(): AdvancedWizardSettings {
       maxTokens: 8192,
     },
     protagonistGeneration: {
+      profileId: DEFAULT_OPENROUTER_PROFILE_ID,
       model: 'deepseek/deepseek-v3.2', // deepseek for protagonist generation
       systemPrompt: DEFAULT_PROMPTS.protagonistGeneration,
       temperature: 0.3,
@@ -158,6 +161,7 @@ export function getDefaultAdvancedSettings(): AdvancedWizardSettings {
       maxTokens: 8192,
     },
     characterElaboration: {
+      profileId: DEFAULT_OPENROUTER_PROFILE_ID,
       model: 'deepseek/deepseek-v3.2', // deepseek for character elaboration
       systemPrompt: DEFAULT_PROMPTS.characterElaboration,
       temperature: 0.3,
@@ -165,12 +169,14 @@ export function getDefaultAdvancedSettings(): AdvancedWizardSettings {
       maxTokens: 8192,
     },
     supportingCharacters: {
+      profileId: DEFAULT_OPENROUTER_PROFILE_ID,
       model: SCENARIO_MODEL, // deepseek for supporting characters
       systemPrompt: DEFAULT_PROMPTS.supportingCharacters,
       temperature: 0.3,
       maxTokens: 8192,
     },
     openingGeneration: {
+      profileId: DEFAULT_OPENROUTER_PROFILE_ID,
       model: 'z-ai/glm-4.7', // GLM-4.7 with z-ai provider for opening generation
       systemPrompt: '', // Empty = use mode-specific prompts (adventure vs creative-writing)
       temperature: 0.8,
@@ -235,11 +241,19 @@ export interface GeneratedOpening {
   };
 }
 class ScenarioService {
-  private getProvider() {
-    if (settings.needsApiKey) {
+  /**
+   * Get a provider configured for a specific profile.
+   * Used by wizard processes that have their own profile setting.
+   */
+  private getProvider(profileId?: string) {
+    // Use provided profileId or fall back to main narrative profile
+    const pid = profileId || settings.apiSettings.mainNarrativeProfileId;
+    const apiSettings = settings.getApiSettingsForProfile(pid);
+
+    if (!apiSettings.openaiApiKey) {
       throw new Error('No API key configured');
     }
-    return new OpenAIProvider(settings.apiSettings);
+    return new OpenAIProvider(apiSettings);
   }
 
   /**
@@ -298,9 +312,9 @@ class ScenarioService {
     overrides?: ProcessSettings,
     lorebookEntries?: { name: string; type: string; description: string; hiddenInfo?: string }[]
   ): Promise<ExpandedSetting> {
-    log('expandSetting called', { seed, genre, hasOverrides: !!overrides, lorebookEntries: lorebookEntries?.length ?? 0 });
+    log('expandSetting called', { seed, genre, hasOverrides: !!overrides, lorebookEntries: lorebookEntries?.length ?? 0, profileId: overrides?.profileId });
 
-    const provider = this.getProvider();
+    const provider = this.getProvider(overrides?.profileId || undefined);
     const genreLabel = genre === 'custom' && customGenre ? customGenre : genre;
 
     const systemPrompt = overrides?.systemPrompt || DEFAULT_PROMPTS.settingExpansion;
@@ -412,9 +426,9 @@ Expand this into a rich, detailed world suitable for interactive storytelling.${
     customGenre?: string,
     overrides?: ProcessSettings
   ): Promise<GeneratedProtagonist> {
-    log('elaborateCharacter called', { userInput, genre, hasOverrides: !!overrides });
+    log('elaborateCharacter called', { userInput, genre, hasOverrides: !!overrides, profileId: overrides?.profileId });
 
-    const provider = this.getProvider();
+    const provider = this.getProvider(overrides?.profileId || undefined);
     const genreLabel = genre === 'custom' && customGenre ? customGenre : genre;
 
     // Build system prompt with context-specific additions
@@ -499,9 +513,9 @@ Expand and enrich these details while staying true to what I've provided.`
     customGenre?: string,
     overrides?: ProcessSettings
   ): Promise<GeneratedProtagonist> {
-    log('generateProtagonist called', { settingName: setting.name, genre, mode, pov, hasOverrides: !!overrides });
+    log('generateProtagonist called', { settingName: setting.name, genre, mode, pov, hasOverrides: !!overrides, profileId: overrides?.profileId });
 
-    const provider = this.getProvider();
+    const provider = this.getProvider(overrides?.profileId || undefined);
     const genreLabel = genre === 'custom' && customGenre ? customGenre : genre;
 
     const povContext = pov === 'first'
@@ -591,9 +605,9 @@ Generate a compelling protagonist who would fit naturally into this world.`
     customGenre?: string,
     overrides?: ProcessSettings
   ): Promise<GeneratedCharacter[]> {
-    log('generateCharacters called', { settingName: setting.name, count, hasOverrides: !!overrides });
+    log('generateCharacters called', { settingName: setting.name, count, hasOverrides: !!overrides, profileId: overrides?.profileId });
 
-    const provider = this.getProvider();
+    const provider = this.getProvider(overrides?.profileId || undefined);
     const genreLabel = genre === 'custom' && customGenre ? customGenre : genre;
 
     const messages: Message[] = [
@@ -663,9 +677,10 @@ Generate ${count} interesting supporting characters who would create compelling 
       mode: wizardData.mode,
       hasOverrides: !!overrides,
       lorebookEntries: lorebookEntries?.length ?? 0,
+      profileId: overrides?.profileId,
     });
 
-    const provider = this.getProvider();
+    const provider = this.getProvider(overrides?.profileId || undefined);
     const { mode, genre, customGenre, expandedSetting, protagonist, characters, writingStyle, title } = wizardData;
     const genreLabel = genre === 'custom' && customGenre ? customGenre : genre;
     const userName = protagonist?.name || 'the protagonist';
@@ -946,9 +961,9 @@ Describe the environment and situation. Do NOT write anything ${userName} does, 
     wizardData: WizardData,
     overrides?: ProcessSettings
   ): AsyncIterable<{ content: string; done: boolean }> {
-    log('streamOpening called', { hasOverrides: !!overrides });
+    log('streamOpening called', { hasOverrides: !!overrides, profileId: overrides?.profileId });
 
-    const provider = this.getProvider();
+    const provider = this.getProvider(overrides?.profileId || undefined);
     const { mode, genre, customGenre, expandedSetting, protagonist, writingStyle } = wizardData;
     const genreLabel = genre === 'custom' && customGenre ? customGenre : genre;
     const userName = protagonist?.name || 'the protagonist';

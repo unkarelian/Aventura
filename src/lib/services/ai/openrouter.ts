@@ -57,7 +57,12 @@ export class OpenAIProvider implements AIProvider {
 
     log('Sending request to OpenRouter...');
 
-    const response = await fetch(new URL('chat/completions', this.settings.openaiApiURL), {
+    // Ensure base URL has trailing slash for proper URL construction
+    const baseUrl = this.settings.openaiApiURL.endsWith('/')
+      ? this.settings.openaiApiURL
+      : this.settings.openaiApiURL + '/';
+
+    const response = await fetch(baseUrl + 'chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -119,7 +124,12 @@ export class OpenAIProvider implements AIProvider {
 
     log('Sending tool-enabled request to OpenRouter...');
 
-    const response = await fetch(new URL('chat/completions', this.settings.openaiApiURL), {
+    // Ensure base URL has trailing slash for proper URL construction
+    const baseUrl = this.settings.openaiApiURL.endsWith('/')
+      ? this.settings.openaiApiURL
+      : this.settings.openaiApiURL + '/';
+
+    const response = await fetch(baseUrl + 'chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -220,7 +230,12 @@ export class OpenAIProvider implements AIProvider {
       requestBody.top_p = request.topP;
     }
 
-    const response = await fetch(new URL('chat/completions', this.settings.openaiApiURL), {
+    // Ensure base URL has trailing slash for proper URL construction
+    const baseUrl = this.settings.openaiApiURL.endsWith('/')
+      ? this.settings.openaiApiURL
+      : this.settings.openaiApiURL + '/';
+
+    const response = await fetch(baseUrl + 'chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -305,7 +320,12 @@ export class OpenAIProvider implements AIProvider {
     try {
       log('Fetching models from OpenRouter API...');
 
-      const response = await fetch(new URL('models', this.settings.openaiApiURL), {
+      // Ensure base URL has trailing slash for proper URL construction
+      const baseUrl = this.settings.openaiApiURL.endsWith('/')
+        ? this.settings.openaiApiURL
+        : this.settings.openaiApiURL + '/';
+
+      const response = await fetch(baseUrl + 'models', {
         method: 'GET',
         headers: {
           'Accept': 'application/json',

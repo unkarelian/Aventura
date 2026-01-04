@@ -237,3 +237,4 @@ aur/
 *.local
 .env*.local
 aventura-release.keystore.old
+design.md

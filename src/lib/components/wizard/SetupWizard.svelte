@@ -614,8 +614,8 @@
 
       importedLorebook = result;
 
-      // Run LLM classification if we have entries and an API key
-      if (result.entries.length > 0 && settings.needsApiKey) {
+      // Run LLM classification if we have entries and an API key is available
+      if (result.entries.length > 0 && !settings.needsApiKey) {
         isImporting = false;
         isClassifying = true;
         classificationProgress = { current: 0, total: result.entries.length };

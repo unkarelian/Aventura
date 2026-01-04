@@ -360,10 +360,27 @@ export interface UIState {
   settingsModalOpen: boolean;
 }
 
+// API Profile for saving OpenAI-compatible endpoint configurations
+export interface APIProfile {
+  id: string;                 // UUID
+  name: string;               // User-friendly name (e.g., "Local LLM", "OpenRouter")
+  baseUrl: string;            // API base URL (e.g., "https://openrouter.ai/api/v1")
+  apiKey: string;             // API key for this endpoint
+  customModels: string[];     // Manually added models
+  fetchedModels: string[];    // Auto-fetched from /models endpoint
+  createdAt: number;          // Timestamp
+}
+
 // API Settings
 export interface APISettings {
+  // Legacy fields - kept for backwards compatibility during migration
   openaiApiURL: string;
   openaiApiKey: string | null;
+  // Saved profiles
+  profiles: APIProfile[];
+  activeProfileId: string | null;  // ID of profile being edited in API tab (UI state only)
+  // Main narrative generation settings
+  mainNarrativeProfileId: string;  // Profile used for main story generation
   defaultModel: string;
   temperature: number;
   maxTokens: number;

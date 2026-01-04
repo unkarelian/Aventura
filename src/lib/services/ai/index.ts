@@ -34,12 +34,41 @@ interface WorldState {
 }
 
 class AIService {
+  /**
+   * Get a provider configured for the main narrative generation.
+   * Uses the mainNarrativeProfileId to get the correct API credentials.
+   */
   private getProvider() {
-    log('Getting provider, API key configured:', !!settings.apiSettings.openaiApiKey);
-    if (settings.needsApiKey) {
-      throw new Error('No API key configured');
+    const profileId = settings.apiSettings.mainNarrativeProfileId;
+    const apiSettings = settings.getApiSettingsForProfile(profileId);
+
+    log('Getting provider for main narrative', {
+      profileId,
+      apiKeyConfigured: !!apiSettings.openaiApiKey,
+    });
+
+    if (!apiSettings.openaiApiKey) {
+      throw new Error('No API key configured for main narrative profile');
     }
-    return new OpenAIProvider(settings.apiSettings);
+    return new OpenAIProvider(apiSettings);
+  }
+
+  /**
+   * Get a provider configured for a specific profile.
+   * Used by services that have their own profile setting.
+   */
+  getProviderForProfile(profileId: string) {
+    const apiSettings = settings.getApiSettingsForProfile(profileId);
+
+    log('Getting provider for profile', {
+      profileId,
+      apiKeyConfigured: !!apiSettings.openaiApiKey,
+    });
+
+    if (!apiSettings.openaiApiKey) {
+      throw new Error(`No API key configured for profile: ${profileId}`);
+    }
+    return new OpenAIProvider(apiSettings);
   }
 
   async generateResponse(

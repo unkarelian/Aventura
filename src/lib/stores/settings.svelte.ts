@@ -1,10 +1,13 @@
-import type { APISettings, UISettings, ThemeId, UpdateSettings } from '$lib/types';
+import type { APISettings, UISettings, ThemeId, UpdateSettings, APIProfile } from '$lib/types';
 import { database } from '$lib/services/database';
 import {
   type AdvancedWizardSettings,
   getDefaultAdvancedSettings,
 } from '$lib/services/ai/scenario';
 import { OPENROUTER_API_URL } from '$lib/services/ai/openrouter';
+
+// Default OpenRouter profile ID - constant so it's always consistent
+export const DEFAULT_OPENROUTER_PROFILE_ID = 'default-openrouter-profile';
 
 // Default system prompts for story generation
 export const DEFAULT_STORY_PROMPTS = {
@@ -336,6 +339,7 @@ Query based ONLY on the information visible in the chapter summaries or things t
 
 // Classifier service settings
 export interface ClassifierSettings {
+  profileId: string | null;  // API profile to use (null = use default profile)
   model: string;
   temperature: number;
   maxTokens: number;
@@ -344,6 +348,7 @@ export interface ClassifierSettings {
 
 export function getDefaultClassifierSettings(): ClassifierSettings {
   return {
+    profileId: DEFAULT_OPENROUTER_PROFILE_ID,
     model: 'x-ai/grok-4-fast',
     temperature: 0.3,
     maxTokens: 8192,
@@ -353,6 +358,7 @@ export function getDefaultClassifierSettings(): ClassifierSettings {
 
 // Memory service settings
 export interface MemorySettings {
+  profileId: string | null;  // API profile to use (null = use default profile)
   model: string;
   temperature: number;
   chapterAnalysisPrompt: string;
@@ -362,6 +368,7 @@ export interface MemorySettings {
 
 export function getDefaultMemorySettings(): MemorySettings {
   return {
+    profileId: DEFAULT_OPENROUTER_PROFILE_ID,
     model: 'x-ai/grok-4.1-fast',
     temperature: 0.3,
     chapterAnalysisPrompt: DEFAULT_SERVICE_PROMPTS.chapterAnalysis,
@@ -372,6 +379,7 @@ export function getDefaultMemorySettings(): MemorySettings {
 
 // Suggestions service settings
 export interface SuggestionsSettings {
+  profileId: string | null;  // API profile to use (null = use default profile)
   model: string;
   temperature: number;
   maxTokens: number;
@@ -380,6 +388,7 @@ export interface SuggestionsSettings {
 
 export function getDefaultSuggestionsSettings(): SuggestionsSettings {
   return {
+    profileId: DEFAULT_OPENROUTER_PROFILE_ID,
     model: 'deepseek/deepseek-v3.2',
     temperature: 0.7,
     maxTokens: 8192,
@@ -389,6 +398,7 @@ export function getDefaultSuggestionsSettings(): SuggestionsSettings {
 
 // Style reviewer service settings
 export interface StyleReviewerSettings {
+  profileId: string | null;  // API profile to use (null = use default profile)
   enabled: boolean;
   model: string;
   temperature: number;
@@ -399,6 +409,7 @@ export interface StyleReviewerSettings {
 
 export function getDefaultStyleReviewerSettings(): StyleReviewerSettings {
   return {
+    profileId: DEFAULT_OPENROUTER_PROFILE_ID,
     enabled: true, // Enabled by default per requirements
     model: 'x-ai/grok-4.1-fast',
     temperature: 0.3,
@@ -410,6 +421,7 @@ export function getDefaultStyleReviewerSettings(): StyleReviewerSettings {
 
 // Lore Management service settings (per design doc section 3.4)
 export interface LoreManagementSettings {
+  profileId: string | null;  // API profile to use (null = use default profile)
   model: string;
   temperature: number;
   maxIterations: number;
@@ -435,6 +447,7 @@ Use your tools to review the story and make necessary changes. When finished, ca
 
 export function getDefaultLoreManagementSettings(): LoreManagementSettings {
   return {
+    profileId: DEFAULT_OPENROUTER_PROFILE_ID,
     model: 'minimax/minimax-m2.1', // Good for agentic tool calling with reasoning
     temperature: 0.3,
     maxIterations: 50,
@@ -444,6 +457,7 @@ export function getDefaultLoreManagementSettings(): LoreManagementSettings {
 
 // Agentic Retrieval service settings (per design doc section 3.1.4)
 export interface AgenticRetrievalSettings {
+  profileId: string | null;  // API profile to use (null = use default profile)
   enabled: boolean;
   model: string;
   temperature: number;
@@ -470,6 +484,7 @@ The context you provide will be injected into the narrator's prompt to help main
 
 export function getDefaultAgenticRetrievalSettings(): AgenticRetrievalSettings {
   return {
+    profileId: DEFAULT_OPENROUTER_PROFILE_ID,
     enabled: false, // Disabled by default, static retrieval usually sufficient
     model: 'minimax/minimax-m2.1',
     temperature: 0.3,
@@ -481,6 +496,7 @@ export function getDefaultAgenticRetrievalSettings(): AgenticRetrievalSettings {
 
 // Timeline Fill service settings (per design doc section 3.1.4: Static Retrieval)
 export interface TimelineFillSettings {
+  profileId: string | null;  // API profile to use (null = use default profile)
   enabled: boolean;
   mode: 'static' | 'agentic';  // 'static' is default, 'agentic' for tool-calling retrieval
   model: string;
@@ -492,6 +508,7 @@ export interface TimelineFillSettings {
 
 export function getDefaultTimelineFillSettings(): TimelineFillSettings {
   return {
+    profileId: DEFAULT_OPENROUTER_PROFILE_ID,
     enabled: true, // Default: enabled (this is the default over agentic retrieval)
     mode: 'static', // Default: static timeline fill (one-time AI call pattern)
     model: 'x-ai/grok-4.1-fast',
@@ -540,6 +557,9 @@ class SettingsStore {
   apiSettings = $state<APISettings>({
     openaiApiKey: null,
     openaiApiURL: OPENROUTER_API_URL,
+    profiles: [],
+    activeProfileId: null,
+    mainNarrativeProfileId: DEFAULT_OPENROUTER_PROFILE_ID,
     defaultModel: 'z-ai/glm-4.7',
     temperature: 0.8,
     maxTokens: 8192,
@@ -574,7 +594,15 @@ class SettingsStore {
     try {
       // Load API settings
       const apiURL = await database.getSetting('openai_api_url') ?? OPENROUTER_API_URL; //Default to OpenRouter.
-      const apiKey = await database.getSetting('openai_api_key') ?? await database.getSetting('openrouter_api_key'); //Migrate API key location.
+
+      // Load API key - check multiple locations for migration
+      // Must handle empty strings explicitly since ?? only checks for null/undefined
+      let apiKey = await database.getSetting('openai_api_key');
+      if (!apiKey || apiKey.length === 0) {
+        // Fall back to legacy openrouter_api_key location
+        apiKey = await database.getSetting('openrouter_api_key');
+      }
+
       const defaultModel = await database.getSetting('default_model');
       const temperature = await database.getSetting('temperature');
       const maxTokens = await database.getSetting('max_tokens');
@@ -588,6 +616,30 @@ class SettingsStore {
       // Load thinking toggle
       const enableThinking = await database.getSetting('enable_thinking');
       if (enableThinking) this.apiSettings.enableThinking = enableThinking === 'true';
+
+      // Load profiles
+      const profilesJson = await database.getSetting('api_profiles');
+      if (profilesJson) {
+        try {
+          this.apiSettings.profiles = JSON.parse(profilesJson);
+        } catch {
+          this.apiSettings.profiles = [];
+        }
+      }
+      const activeProfileId = await database.getSetting('active_profile_id');
+      if (activeProfileId) this.apiSettings.activeProfileId = activeProfileId;
+
+      // Load main narrative profile (defaults to OpenRouter if not set)
+      const mainNarrativeProfileId = await database.getSetting('main_narrative_profile_id');
+      if (mainNarrativeProfileId) {
+        this.apiSettings.mainNarrativeProfileId = mainNarrativeProfileId;
+      } else {
+        // Migration: default to OpenRouter for existing users
+        this.apiSettings.mainNarrativeProfileId = DEFAULT_OPENROUTER_PROFILE_ID;
+      }
+
+      // Ensure default OpenRouter profile exists (migration for new/existing users)
+      await this.ensureDefaultOpenRouterProfile(apiKey || null);
 
       // Load UI settings
       const theme = await database.getSetting('theme');
@@ -673,6 +725,9 @@ class SettingsStore {
         }
       }
 
+      // Migrate null profileIds to default OpenRouter profile
+      await this.migrateNullProfileIds();
+
       this.initialized = true;
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -709,6 +764,355 @@ class SettingsStore {
     await database.setSetting('enable_thinking', enabled.toString());
   }
 
+  // ===== Profile Management Methods =====
+
+  async saveProfiles() {
+    await database.setSetting('api_profiles', JSON.stringify(this.apiSettings.profiles));
+    if (this.apiSettings.activeProfileId) {
+      await database.setSetting('active_profile_id', this.apiSettings.activeProfileId);
+    }
+  }
+
+  async addProfile(profile: Omit<APIProfile, 'id' | 'createdAt'>) {
+    const newProfile: APIProfile = {
+      ...profile,
+      id: crypto.randomUUID(),
+      createdAt: Date.now(),
+    };
+    this.apiSettings.profiles = [...this.apiSettings.profiles, newProfile];
+    await this.saveProfiles();
+    return newProfile;
+  }
+
+  async updateProfile(id: string, updates: Partial<Omit<APIProfile, 'id' | 'createdAt'>>) {
+    const index = this.apiSettings.profiles.findIndex(p => p.id === id);
+    if (index === -1) return;
+
+    this.apiSettings.profiles[index] = {
+      ...this.apiSettings.profiles[index],
+      ...updates,
+    };
+    this.apiSettings.profiles = [...this.apiSettings.profiles];
+    await this.saveProfiles();
+  }
+
+  async deleteProfile(id: string) {
+    // Prevent deleting the default OpenRouter profile
+    if (id === DEFAULT_OPENROUTER_PROFILE_ID) {
+      console.warn('[Settings] Cannot delete the default OpenRouter profile');
+      return false;
+    }
+
+    this.apiSettings.profiles = this.apiSettings.profiles.filter(p => p.id !== id);
+
+    // If deleted profile was active, switch to default profile
+    if (this.apiSettings.activeProfileId === id) {
+      this.apiSettings.activeProfileId = DEFAULT_OPENROUTER_PROFILE_ID;
+      const defaultProfile = this.getDefaultProfile();
+      if (defaultProfile) {
+        this.apiSettings.openaiApiURL = defaultProfile.baseUrl;
+        this.apiSettings.openaiApiKey = defaultProfile.apiKey;
+      }
+    }
+
+    await this.saveProfiles();
+    return true;
+  }
+
+  /**
+   * Check if a profile can be deleted (not the default profile)
+   */
+  canDeleteProfile(id: string): boolean {
+    return id !== DEFAULT_OPENROUTER_PROFILE_ID;
+  }
+
+  /**
+   * Set the active profile for editing in the API tab (UI state only)
+   * This does NOT change which profile is used for API calls
+   */
+  setActiveProfileForEditing(id: string | null) {
+    this.apiSettings.activeProfileId = id;
+  }
+
+  /**
+   * Set the profile used for main narrative generation
+   */
+  async setMainNarrativeProfile(profileId: string) {
+    this.apiSettings.mainNarrativeProfileId = profileId;
+    await database.setSetting('main_narrative_profile_id', profileId);
+  }
+
+  /**
+   * Get the profile used for main narrative generation
+   */
+  getMainNarrativeProfile(): APIProfile | undefined {
+    return this.getProfile(this.apiSettings.mainNarrativeProfileId);
+  }
+
+  /**
+   * Get API settings configured for a specific profile.
+   * This returns a modified APISettings object with the profile's URL and key.
+   * Use this when creating an OpenAIProvider for a specific service.
+   */
+  getApiSettingsForProfile(profileId: string): APISettings {
+    const profile = this.getProfile(profileId);
+    if (!profile) {
+      // Fall back to default OpenRouter profile
+      const defaultProfile = this.getDefaultProfile();
+      if (defaultProfile) {
+        return {
+          ...this.apiSettings,
+          openaiApiURL: defaultProfile.baseUrl,
+          openaiApiKey: defaultProfile.apiKey,
+        };
+      }
+      // Ultimate fallback - use current settings
+      return this.apiSettings;
+    }
+
+    return {
+      ...this.apiSettings,
+      openaiApiURL: profile.baseUrl,
+      openaiApiKey: profile.apiKey,
+    };
+  }
+
+  getProfile(id: string): APIProfile | undefined {
+    return this.apiSettings.profiles.find(p => p.id === id);
+  }
+
+  getActiveProfile(): APIProfile | undefined {
+    if (!this.apiSettings.activeProfileId) return undefined;
+    return this.getProfile(this.apiSettings.activeProfileId);
+  }
+
+  getProfileModels(profileId: string | null): string[] {
+    if (!profileId) return [];
+    const profile = this.getProfile(profileId);
+    if (!profile) return [];
+    return [...new Set([...profile.fetchedModels, ...profile.customModels])];
+  }
+
+  /**
+   * Collect all models currently in use across all services.
+   * This is used for migration to ensure the default profile has all needed models.
+   */
+  private collectModelsInUse(): string[] {
+    const models = new Set<string>();
+
+    // Default model
+    if (this.apiSettings.defaultModel) {
+      models.add(this.apiSettings.defaultModel);
+    }
+
+    // Classifier
+    if (this.systemServicesSettings.classifier.model) {
+      models.add(this.systemServicesSettings.classifier.model);
+    }
+
+    // Memory
+    if (this.systemServicesSettings.memory.model) {
+      models.add(this.systemServicesSettings.memory.model);
+    }
+
+    // Suggestions
+    if (this.systemServicesSettings.suggestions.model) {
+      models.add(this.systemServicesSettings.suggestions.model);
+    }
+
+    // Style Reviewer
+    if (this.systemServicesSettings.styleReviewer.model) {
+      models.add(this.systemServicesSettings.styleReviewer.model);
+    }
+
+    // Lore Management
+    if (this.systemServicesSettings.loreManagement.model) {
+      models.add(this.systemServicesSettings.loreManagement.model);
+    }
+
+    // Agentic Retrieval
+    if (this.systemServicesSettings.agenticRetrieval.model) {
+      models.add(this.systemServicesSettings.agenticRetrieval.model);
+    }
+
+    // Timeline Fill
+    if (this.systemServicesSettings.timelineFill.model) {
+      models.add(this.systemServicesSettings.timelineFill.model);
+    }
+
+    // Wizard settings
+    for (const process of Object.values(this.wizardSettings)) {
+      if (process.model) {
+        models.add(process.model);
+      }
+    }
+
+    return Array.from(models).filter(m => m.length > 0);
+  }
+
+  /**
+   * Ensure the default OpenRouter profile exists.
+   * This handles migration from:
+   * - Fresh installs (no profiles, no API key)
+   * - Pre-profile versions (existing API key but no profiles)
+   * - Profile-aware versions (profiles may or may not include OpenRouter)
+   */
+  async ensureDefaultOpenRouterProfile(existingApiKey: string | null) {
+    // Check if default OpenRouter profile already exists
+    const existingDefault = this.apiSettings.profiles.find(
+      p => p.id === DEFAULT_OPENROUTER_PROFILE_ID
+    );
+
+    // Collect all models currently in use for migration
+    const modelsInUse = this.collectModelsInUse();
+
+    // Common OpenRouter models to include by default
+    const defaultOpenRouterModels = [
+      'deepseek/deepseek-v3.2',
+      'x-ai/grok-4.1-fast',
+      'x-ai/grok-4-fast',
+      'z-ai/glm-4.7',
+      'minimax/minimax-m2.1',
+    ];
+
+    // Combine models in use with defaults, removing duplicates
+    const allModels = [...new Set([...modelsInUse, ...defaultOpenRouterModels])];
+
+    if (!existingDefault) {
+      // Create the default OpenRouter profile
+      const defaultProfile: APIProfile = {
+        id: DEFAULT_OPENROUTER_PROFILE_ID,
+        name: 'OpenRouter',
+        baseUrl: OPENROUTER_API_URL,
+        apiKey: existingApiKey || '', // Migrate existing key if present
+        customModels: allModels, // Include all models in use plus defaults
+        fetchedModels: [], // Will be populated when user fetches from API
+        createdAt: Date.now(),
+      };
+
+      // Add to profiles array (at the beginning so it's first)
+      this.apiSettings.profiles = [defaultProfile, ...this.apiSettings.profiles];
+
+      // If no active profile is set, make this the active one
+      if (!this.apiSettings.activeProfileId) {
+        this.apiSettings.activeProfileId = DEFAULT_OPENROUTER_PROFILE_ID;
+        // Also set the current URL/key to match the profile
+        this.apiSettings.openaiApiURL = defaultProfile.baseUrl;
+        this.apiSettings.openaiApiKey = defaultProfile.apiKey;
+      }
+
+      // Save to database
+      await this.saveProfiles();
+
+      console.log('[Settings] Created default OpenRouter profile with', allModels.length, 'models');
+    } else {
+      let needsSave = false;
+
+      // Profile exists but has no API key, and we found one in the old location
+      if (existingApiKey && !existingDefault.apiKey) {
+        existingDefault.apiKey = existingApiKey;
+        needsSave = true;
+        console.log('[Settings] Migrated API key to existing OpenRouter profile');
+      }
+
+      // Add any models in use that aren't already in the profile
+      const existingModels = new Set([...existingDefault.fetchedModels, ...existingDefault.customModels]);
+      const missingModels = modelsInUse.filter(m => !existingModels.has(m));
+      if (missingModels.length > 0) {
+        existingDefault.customModels = [...new Set([...existingDefault.customModels, ...missingModels])];
+        needsSave = true;
+        console.log('[Settings] Added', missingModels.length, 'missing models to OpenRouter profile');
+      }
+
+      if (needsSave) {
+        this.apiSettings.profiles = [...this.apiSettings.profiles];
+        await this.saveProfiles();
+      }
+    }
+  }
+
+  /**
+   * Migrate null profileIds to the default OpenRouter profile.
+   * This handles existing users who have null profileIds from before
+   * profiles were required to be explicitly set.
+   */
+  async migrateNullProfileIds() {
+    let needsSave = false;
+
+    // Helper to check if profileId needs migration (null, undefined, or empty string)
+    const needsMigration = (profileId: string | null | undefined): boolean => {
+      return profileId === null || profileId === undefined || profileId === '';
+    };
+
+    // Migrate system services settings
+    if (needsMigration(this.systemServicesSettings.classifier.profileId)) {
+      this.systemServicesSettings.classifier.profileId = DEFAULT_OPENROUTER_PROFILE_ID;
+      needsSave = true;
+    }
+    if (needsMigration(this.systemServicesSettings.memory.profileId)) {
+      this.systemServicesSettings.memory.profileId = DEFAULT_OPENROUTER_PROFILE_ID;
+      needsSave = true;
+    }
+    if (needsMigration(this.systemServicesSettings.suggestions.profileId)) {
+      this.systemServicesSettings.suggestions.profileId = DEFAULT_OPENROUTER_PROFILE_ID;
+      needsSave = true;
+    }
+    if (needsMigration(this.systemServicesSettings.styleReviewer.profileId)) {
+      this.systemServicesSettings.styleReviewer.profileId = DEFAULT_OPENROUTER_PROFILE_ID;
+      needsSave = true;
+    }
+    if (needsMigration(this.systemServicesSettings.loreManagement.profileId)) {
+      this.systemServicesSettings.loreManagement.profileId = DEFAULT_OPENROUTER_PROFILE_ID;
+      needsSave = true;
+    }
+    if (needsMigration(this.systemServicesSettings.agenticRetrieval.profileId)) {
+      this.systemServicesSettings.agenticRetrieval.profileId = DEFAULT_OPENROUTER_PROFILE_ID;
+      needsSave = true;
+    }
+    if (needsMigration(this.systemServicesSettings.timelineFill.profileId)) {
+      this.systemServicesSettings.timelineFill.profileId = DEFAULT_OPENROUTER_PROFILE_ID;
+      needsSave = true;
+    }
+
+    if (needsSave) {
+      await this.saveSystemServicesSettings();
+      console.log('[Settings] Migrated null/undefined profileIds to default OpenRouter profile');
+    }
+
+    // Migrate wizard settings
+    let wizardNeedsSave = false;
+    for (const [key, process] of Object.entries(this.wizardSettings)) {
+      if (needsMigration(process.profileId)) {
+        (this.wizardSettings as any)[key].profileId = DEFAULT_OPENROUTER_PROFILE_ID;
+        wizardNeedsSave = true;
+      }
+    }
+
+    if (wizardNeedsSave) {
+      await this.saveWizardSettings();
+      console.log('[Settings] Migrated wizard null/undefined profileIds to default OpenRouter profile');
+    }
+  }
+
+  /**
+   * Get the default OpenRouter profile (always exists after init)
+   */
+  getDefaultProfile(): APIProfile | undefined {
+    return this.getProfile(DEFAULT_OPENROUTER_PROFILE_ID);
+  }
+
+  /**
+   * Get the profile to use for a given profileId.
+   * If profileId is null, returns the active profile or the default profile.
+   */
+  getProfileForService(profileId: string | null): APIProfile | undefined {
+    if (profileId) {
+      return this.getProfile(profileId);
+    }
+    // Fall back to active profile, then default profile
+    return this.getActiveProfile() || this.getDefaultProfile();
+  }
+
   /**
    * Apply theme to the DOM using data-theme attribute and legacy dark class
    */
@@ -740,8 +1144,14 @@ class SettingsStore {
     await database.setSetting('spellcheck_enabled', enabled.toString());
   }
 
-  //Return true if the an api key is needed.
+  //Return true if an API key is needed.
+  //If ANY profile has an API key, return false (no key needed).
   get needsApiKey(): boolean {
+    // Check if any profile has an API key
+    const hasProfileWithKey = this.apiSettings.profiles.some(p => p.apiKey && p.apiKey.length > 0);
+    if (hasProfileWithKey) return false;
+
+    // Fall back to legacy check for pre-profile installations
     return (!this.apiSettings.openaiApiKey && this.apiSettings.openaiApiURL == OPENROUTER_API_URL);
   }
 
@@ -853,11 +1263,17 @@ class SettingsStore {
   async resetAllSettings(preserveApiSettings = true) {
     const apiKey = preserveApiSettings ? this.apiSettings.openaiApiKey : null;
     const apiURL = preserveApiSettings ? this.apiSettings.openaiApiURL : OPENROUTER_API_URL;
+    const profiles = preserveApiSettings ? this.apiSettings.profiles : [];
+    const activeProfileId = preserveApiSettings ? this.apiSettings.activeProfileId : null;
+    const mainNarrativeProfileId = preserveApiSettings ? this.apiSettings.mainNarrativeProfileId : DEFAULT_OPENROUTER_PROFILE_ID;
 
-    // Reset API settings (except URL/key if preserving)
+    // Reset API settings (except URL/key/profiles if preserving)
     this.apiSettings = {
       openaiApiURL: apiURL,
       openaiApiKey: apiKey,
+      profiles: profiles,
+      activeProfileId: activeProfileId,
+      mainNarrativeProfileId: mainNarrativeProfileId,
       defaultModel: 'z-ai/glm-4.7',
       temperature: 0.8,
       maxTokens: 8192,

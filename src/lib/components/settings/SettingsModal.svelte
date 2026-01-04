@@ -1,29 +1,19 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
   import { ui } from '$lib/stores/ui.svelte';
-  import { settings, DEFAULT_SERVICE_PROMPTS } from '$lib/stores/settings.svelte';
+  import { settings, DEFAULT_SERVICE_PROMPTS, DEFAULT_OPENROUTER_PROFILE_ID } from '$lib/stores/settings.svelte';
   import { OpenAIProvider, OPENROUTER_API_URL } from '$lib/services/ai/openrouter';
-  import type { ModelInfo } from '$lib/services/ai/types';
   import type { ThemeId } from '$lib/types';
   import {
     type AdvancedWizardSettings,
     SCENARIO_MODEL,
   } from '$lib/services/ai/scenario';
-  import { X, Key, Cpu, Palette, RefreshCw, Search, Settings2, RotateCcw, ChevronDown, ChevronUp, Brain, BookOpen, Lightbulb, Sparkles, Clock, Download, Loader2 } from 'lucide-svelte';
+  import { X, Key, Cpu, Palette, RefreshCw, Search, Settings2, RotateCcw, ChevronDown, ChevronUp, Brain, BookOpen, Lightbulb, Sparkles, Clock, Download, Loader2, Save, FolderOpen } from 'lucide-svelte';
+  import { ask } from '@tauri-apps/plugin-dialog';
+  import ProfileModal from './ProfileModal.svelte';
+  import ModelSelector from './ModelSelector.svelte';
+  import type { APIProfile } from '$lib/types';
   import { swipe } from '$lib/utils/swipe';
   import { updaterService, type UpdateInfo, type UpdateProgress } from '$lib/services/updater';
-
-  // Import lodash?
-  // import { debounce } from 'lodash';
-  // If not, Where should this go?
-	let timeout: number|null = 0;
-	const debounce = (to_run: Function, time: number = 100) => {
-		timeout && clearTimeout(timeout);
-		timeout = setTimeout(() => {
-			timeout = null;
-			to_run();
-		}, time);
-	};
 
   let activeTab = $state<'api' | 'generation' | 'ui' | 'advanced'>('api');
 
@@ -53,10 +43,9 @@
     openingGeneration: 'Opening Generation',
   };
 
-  let apiURLInput = $state(settings.apiSettings.openaiApiURL);
-  // Local state for API key (to avoid showing actual key)
-  let apiKeyInput = $state('');
-  let apiKeySet = $state(false);
+  // Profile state
+  let showProfileModal = $state(false);
+  let editingProfile = $state<APIProfile | null>(null);
 
   // Update checking state
   let updateInfo = $state<UpdateInfo | null>(null);
@@ -66,142 +55,118 @@
   let updateError = $state<string | null>(null);
 
   // Model fetching state
-  let models = $state<ModelInfo[]>([]);
   let isLoadingModels = $state(false);
   let modelError = $state<string | null>(null);
   let modelSearch = $state('');
 
-  // Fallback models if API fetch fails
-  const fallbackModels: ModelInfo[] = [
-    { id: 'deepseek/deepseek-v3.2', name: 'DeepSeek V3.2', contextLength: 131072 },
-    { id: 'x-ai/grok-4.1-fast', name: 'Grok 4.1 Fast', contextLength: 131072 },
-    { id: 'x-ai/grok-4.1', name: 'Grok 4.1', contextLength: 131072 },
-    { id: 'anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', contextLength: 200000 },
-    { id: 'anthropic/claude-3.5-sonnet', name: 'Claude 3.5 Sonnet', contextLength: 200000 },
-    { id: 'openai/gpt-4o', name: 'GPT-4o', contextLength: 128000 },
-    { id: 'google/gemini-pro-1.5', name: 'Gemini Pro 1.5', contextLength: 1000000 },
-    { id: 'meta-llama/llama-3.1-405b-instruct', name: 'Llama 3.1 405B', contextLength: 131072 },
-  ];
+  // Get models from main narrative profile
+  let profileModels = $derived.by(() => {
+    const profile = settings.getMainNarrativeProfile();
+    if (!profile) return [];
+    // Combine fetched and custom models, removing duplicates
+    return [...new Set([...profile.fetchedModels, ...profile.customModels])];
+  });
 
-  // Filtered and sorted models
+  // Filtered and sorted models from profile
   let filteredModels = $derived.by(() => {
-    let result = models.length > 0 ? [...models] : [...fallbackModels];
+    let result = [...profileModels];
 
     // Filter by search term
     if (modelSearch.trim()) {
       const search = modelSearch.toLowerCase();
-      result = result.filter(m =>
-        m.id.toLowerCase().includes(search) ||
-        m.name.toLowerCase().includes(search)
-      );
+      result = result.filter(m => m.toLowerCase().includes(search));
     }
 
     // Sort: prioritize popular providers, then alphabetically
     const providerPriority: Record<string, number> = {
       'x-ai': 1,
-      'anthropic': 2,
+      'deepseek': 2,
       'openai': 3,
-      'google': 4,
-      'meta-llama': 5,
-      'mistralai': 6,
+      'anthropic': 4,
+      'google': 5,
+      'meta-llama': 6,
+      'mistralai': 7,
     };
 
     return result.sort((a, b) => {
-      const providerA = a.id.split('/')[0];
-      const providerB = b.id.split('/')[0];
+      const providerA = a.split('/')[0];
+      const providerB = b.split('/')[0];
       const priorityA = providerPriority[providerA] ?? 99;
       const priorityB = providerPriority[providerB] ?? 99;
 
       if (priorityA !== priorityB) return priorityA - priorityB;
-      return a.name.localeCompare(b.name);
+      return a.localeCompare(b);
     });
   });
 
-  $effect(() => {
-    apiKeySet = !!settings.apiSettings.openaiApiKey;
-  });
+  // Fetch models and save to main narrative profile
+  async function fetchModelsToProfile() {
+    const profile = settings.getMainNarrativeProfile();
+    if (!profile) return;
 
-  // Fetch models on mount (public endpoint, no API key needed)
-  onMount(() => {
-    console.log('[SettingsModal] onMount - starting model fetch');
-    fetchModels();
-  });
-
-  async function fetchModels() {
-    console.log('[SettingsModal] fetchModels called', { isLoadingModels });
-
-    if (isLoadingModels) {
-      console.log('[SettingsModal] Already loading, skipping');
-      return;
-    }
+    if (isLoadingModels) return;
 
     isLoadingModels = true;
     modelError = null;
 
     try {
-      console.log('[SettingsModal] Creating OpenAIProvider...');
-      // The OpenRouter Models endpoint is public, doesn't need API key, but other providers may.
-      const provider = new OpenAIProvider(settings.apiSettings);
-
-      console.log('[SettingsModal] Calling listModels...');
+      // Use the main narrative profile's credentials
+      const apiSettings = settings.getApiSettingsForProfile(profile.id);
+      const provider = new OpenAIProvider(apiSettings);
       const fetchedModels = await provider.listModels();
-      console.log('[SettingsModal] Received models:', fetchedModels.length);
 
       // Filter to only include text/chat models (exclude image, embedding, etc.)
-      models = fetchedModels.filter(m => {
-        const id = m.id.toLowerCase();
-        // Exclude non-chat models
-        if (id.includes('embedding') || id.includes('vision-only') || id.includes('tts') || id.includes('whisper')) {
-          return false;
-        }
-        return true;
+      const filteredModelIds = fetchedModels
+        .filter(m => {
+          const id = m.id.toLowerCase();
+          if (id.includes('embedding') || id.includes('vision-only') || id.includes('tts') || id.includes('whisper')) {
+            return false;
+          }
+          return true;
+        })
+        .map(m => m.id);
+
+      // Update profile with fetched models
+      await settings.updateProfile(profile.id, {
+        fetchedModels: filteredModelIds,
       });
 
-      console.log(`[SettingsModal] Filtered to ${models.length} text/chat models`);
+      console.log(`[SettingsModal] Fetched ${filteredModelIds.length} models to profile`);
     } catch (error) {
       console.error('[SettingsModal] Failed to fetch models:', error);
-      modelError = error instanceof Error ? error.message : 'Failed to load models. Using defaults.';
-      models = [];
+      modelError = error instanceof Error ? error.message : 'Failed to load models.';
     } finally {
       isLoadingModels = false;
-      console.log('[SettingsModal] fetchModels complete', { modelCount: models.length, error: modelError });
     }
   }
 
-  async function saveApiURL(url:string = apiURLInput) {
-    apiURLInput = url;
-
-    let apiURL = new URL(url.trim())
-    //Require trailing slash.
-    if (!apiURL.pathname.endsWith('/')) {
-      apiURL.pathname += '/';
-    }
-    console.log("SET URL to", apiURL.href);
-    await settings.setApiURL(apiURL.href);
+  // Set the main narrative profile
+  async function handleSetMainNarrativeProfile(profileId: string) {
+    await settings.setMainNarrativeProfile(profileId);
   }
 
-  async function saveApiKey() {
-    if (apiKeyInput.trim()) {
-      await settings.setApiKey(apiKeyInput.trim());
-      apiKeyInput = '';
+  async function handleProfileSave(profile: APIProfile) {
+    if (editingProfile) {
+      await settings.updateProfile(profile.id, profile);
+    } else {
+      await settings.addProfile(profile);
+    }
+    showProfileModal = false;
+    editingProfile = null;
+  }
+
+  async function handleDeleteProfile(profileId: string, profileName: string) {
+    const confirmed = await ask(`Delete profile "${profileName}"?`, {
+      title: 'Delete Profile',
+      kind: 'warning',
+    });
+    if (confirmed) {
+      await settings.deleteProfile(profileId);
     }
   }
 
   function handleRefreshModels() {
-    models = [];
-    fetchModels();
-  }
-
-  async function clearApiKey() {
-    await settings.setApiKey('');
-    apiKeySet = false;
-    models = [];
-  }
-
-  function formatContextLength(length: number): string {
-    if (length >= 1000000) return `${(length / 1000000).toFixed(1)}M`;
-    if (length >= 1000) return `${Math.round(length / 1000)}K`;
-    return length.toString();
+    fetchModelsToProfile();
   }
 
   async function handleResetAll() {
@@ -346,75 +311,91 @@
     <div class="flex-1 overflow-y-auto py-4 min-h-0">
       {#if activeTab === 'api'}
         <div class="space-y-4">
+          <!-- API Profiles Management Section -->
           <div>
-            <label class="mb-2 block text-sm font-medium text-surface-300">
-              API URL
-            </label>
-              <div class="flex gap-2">
-                <input
-                  type="text"
-                  bind:value={apiURLInput}
-                  oninput={() => debounce(() => {
-                      saveApiURL();
-                      handleRefreshModels();
-                    }, 1000)
-                  }
-                  placeholder="{OPENROUTER_API_URL}"
-                  class="input flex-1"
-                />
-                <button class="btn btn-secondary" onclick={() => {
-                  saveApiURL(OPENROUTER_API_URL);
-                  handleRefreshModels();
-                }}>
-                  Reset
-                </button>
-              </div>
-              <p class="mt-2 text-sm text-surface-500">Requires an OpenAI compatible /chat/completions endpoint.</p>
-              <p class="mt-2 text-xs text-surface-500">Try adding /v1 if it doesn't work.</p>
-          </div>
+            <div class="mb-3 flex items-center justify-between">
+              <label class="text-sm font-medium text-surface-300">
+                API Profiles
+              </label>
+              <button
+                class="btn btn-secondary text-xs"
+                onclick={() => { editingProfile = null; showProfileModal = true; }}
+                title="Create new profile"
+              >
+                + New Profile
+              </button>
+            </div>
 
-          <div>
-            <label class="mb-2 block text-sm font-medium text-surface-300">
-              API Key
-            </label>
-            {#if apiKeySet}
-              <div class="flex items-center gap-2">
-                <div class="input flex-1 bg-surface-700 text-surface-400">
-                  ••••••••••••••••••••
+            <p class="mb-3 text-xs text-surface-500">
+              Manage your API endpoint configurations. Each profile can have its own URL, API key, and model list.
+              Select which profile to use for each service in the Generation and Advanced tabs.
+            </p>
+
+            <!-- List of profiles -->
+            <div class="space-y-2">
+              {#each settings.apiSettings.profiles as profile (profile.id)}
+                <div class="flex items-center justify-between rounded-lg bg-surface-800 p-3 border border-surface-700">
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                      <span class="font-medium text-surface-200 truncate">{profile.name}</span>
+                      {#if profile.id === DEFAULT_OPENROUTER_PROFILE_ID}
+                        <span class="text-xs bg-accent-600/20 text-accent-400 px-1.5 py-0.5 rounded">Default</span>
+                      {/if}
+                    </div>
+                    <div class="text-xs text-surface-500 truncate mt-0.5">
+                      {profile.baseUrl}
+                      {#if profile.apiKey}
+                        <span class="text-green-400 ml-2">Key set</span>
+                      {:else}
+                        <span class="text-amber-400 ml-2">No key</span>
+                      {/if}
+                    </div>
+                  </div>
+                  <button
+                    class="btn btn-secondary text-xs ml-2 shrink-0"
+                    onclick={() => { editingProfile = profile; showProfileModal = true; }}
+                  >
+                    Edit
+                  </button>
                 </div>
-                <button class="btn btn-secondary" onclick={clearApiKey}>
-                  Clear
-                </button>
-              </div>
-              <p class="mt-1 text-sm text-green-400">API key configured</p>
-            {:else}
-              <div class="flex gap-2">
-                <input
-                  type="password"
-                  bind:value={apiKeyInput}
-                  placeholder="sk-or-..."
-                  class="input flex-1"
-                />
-                <button
-                  class="btn btn-primary"
-                  onclick={saveApiKey}
-                  disabled={!apiKeyInput.trim()}
-                >
-                  Save
-                </button>
-              </div>
-            {/if}
-              {#if (apiURLInput == OPENROUTER_API_URL)}
-              <p class="mt-2 text-sm text-surface-500">
-                Get your API key from <a href="https://openrouter.ai/keys" target="_blank" class="text-accent-400 hover:underline">openrouter.ai</a>
-              </p>
-            {/if}
+              {/each}
+            </div>
+
+            <!-- Quick link for OpenRouter -->
+            <p class="mt-4 text-sm text-surface-500">
+              Get an API key from <a href="https://openrouter.ai/keys" target="_blank" class="text-accent-400 hover:underline">openrouter.ai</a>
+            </p>
+          </div>
+        </div>
+      {:else if activeTab === 'generation'}
+        <div class="space-y-4">
+          <!-- Main Narrative Profile -->
+          <div>
+            <label class="mb-2 block text-sm font-medium text-surface-300">
+              Main Narrative Profile
+            </label>
+            <select
+              class="input"
+              value={settings.apiSettings.mainNarrativeProfileId}
+              onchange={(e) => handleSetMainNarrativeProfile(e.currentTarget.value)}
+            >
+              {#each settings.apiSettings.profiles as profile (profile.id)}
+                <option value={profile.id}>
+                  {profile.name}
+                  {#if profile.id === DEFAULT_OPENROUTER_PROFILE_ID} (Default){/if}
+                </option>
+              {/each}
+            </select>
+            <p class="mt-1 text-xs text-surface-500">
+              API endpoint used for story generation
+            </p>
           </div>
 
+          <!-- Main Narrative Model -->
           <div>
             <div class="mb-2 flex items-center justify-between">
               <label class="text-sm font-medium text-surface-300">
-                Default Model
+                Main Narrative Model
               </label>
               <button
                 class="flex items-center gap-1 text-xs text-accent-400 hover:text-accent-300 disabled:opacity-50"
@@ -424,7 +405,7 @@
                 <span class={isLoadingModels ? 'animate-spin' : ''}>
                   <RefreshCw class="h-3 w-3" />
                 </span>
-                Refresh
+                Refresh Models
               </button>
             </div>
 
@@ -452,24 +433,24 @@
             >
               {#if isLoadingModels}
                 <option>Loading models...</option>
+              {:else if filteredModels.length === 0}
+                <option value="">No models available - click Refresh</option>
               {:else}
-                {#each filteredModels as model}
-                  <option value={model.id}>
-                    {model.name} ({formatContextLength(model.contextLength)} ctx)
+                {#each filteredModels as modelId}
+                  <option value={modelId}>
+                    {modelId}
                   </option>
                 {/each}
               {/if}
             </select>
 
-            {#if models.length > 0}
+            {#if profileModels.length > 0}
               <p class="mt-1 text-xs text-surface-500">
-                {models.length} models available
+                {profileModels.length} models available from selected profile
               </p>
             {/if}
           </div>
-        </div>
-      {:else if activeTab === 'generation'}
-        <div class="space-y-4">
+
           <div>
             <label class="mb-2 block text-sm font-medium text-surface-300">
               Temperature: {settings.apiSettings.temperature.toFixed(1)}
@@ -477,7 +458,7 @@
             <input
               type="range"
               min="0"
-              max="2"
+              max="1"
               step="0.1"
               value={settings.apiSettings.temperature}
               oninput={(e) => settings.setTemperature(parseFloat(e.currentTarget.value))}
@@ -880,20 +861,20 @@
 
                     {#if editingProcess === process}
                       <div class="space-y-3 pt-2 border-t border-surface-700">
-                        <!-- Model Selection -->
-                        <div>
-                          <label class="mb-1 block text-xs font-medium text-surface-400">Model</label>
-                          <input
-                            type="text"
-                            bind:value={settings.wizardSettings[process].model}
-                            onblur={() => settings.saveWizardSettings()}
-                            placeholder={SCENARIO_MODEL}
-                            class="input text-sm"
-                          />
-                          <p class="text-xs text-surface-500 mt-1">
-                            Default: {SCENARIO_MODEL}
-                          </p>
-                        </div>
+                        <!-- Profile and Model Selection -->
+                        <ModelSelector
+                          profileId={settings.wizardSettings[process].profileId ?? null}
+                          model={settings.wizardSettings[process].model ?? SCENARIO_MODEL}
+                          onProfileChange={(id) => {
+                            settings.wizardSettings[process].profileId = id;
+                            settings.saveWizardSettings();
+                          }}
+                          onModelChange={(m) => {
+                            settings.wizardSettings[process].model = m;
+                            settings.saveWizardSettings();
+                          }}
+                          onManageProfiles={() => { showProfileModal = true; editingProfile = null; }}
+                        />
 
                         <!-- Temperature -->
                         <div>
@@ -1002,32 +983,37 @@
             {#if showClassifierSection}
               <div class="mt-3 space-y-3">
                 <div class="card bg-surface-900 p-3">
-                  <!-- Model and Temperature Row -->
-                  <div class="grid grid-cols-2 gap-3 mb-3">
-                    <div>
-                      <label class="mb-1 block text-xs font-medium text-surface-400">Model</label>
-                      <input
-                        type="text"
-                        bind:value={settings.systemServicesSettings.classifier.model}
-                        onblur={() => settings.saveSystemServicesSettings()}
-                        placeholder="deepseek/deepseek-v3.2"
-                        class="input text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label class="mb-1 block text-xs font-medium text-surface-400">
-                        Temperature: {settings.systemServicesSettings.classifier.temperature.toFixed(2)}
-                      </label>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        bind:value={settings.systemServicesSettings.classifier.temperature}
-                        onchange={() => settings.saveSystemServicesSettings()}
-                        class="w-full h-2"
-                      />
-                    </div>
+                  <!-- Profile and Model Selector -->
+                  <div class="mb-3">
+                    <ModelSelector
+                      profileId={settings.systemServicesSettings.classifier.profileId}
+                      model={settings.systemServicesSettings.classifier.model}
+                      onProfileChange={(id) => {
+                        settings.systemServicesSettings.classifier.profileId = id;
+                        settings.saveSystemServicesSettings();
+                      }}
+                      onModelChange={(m) => {
+                        settings.systemServicesSettings.classifier.model = m;
+                        settings.saveSystemServicesSettings();
+                      }}
+                      onManageProfiles={() => { showProfileModal = true; editingProfile = null; }}
+                    />
+                  </div>
+
+                  <!-- Temperature -->
+                  <div class="mb-3">
+                    <label class="mb-1 block text-xs font-medium text-surface-400">
+                      Temperature: {settings.systemServicesSettings.classifier.temperature.toFixed(2)}
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      bind:value={settings.systemServicesSettings.classifier.temperature}
+                      onchange={() => settings.saveSystemServicesSettings()}
+                      class="w-full h-2"
+                    />
                   </div>
 
                   <!-- Max Tokens -->
@@ -1107,32 +1093,37 @@
             {#if showMemorySection}
               <div class="mt-3 space-y-3">
                 <div class="card bg-surface-900 p-3">
-                  <!-- Model and Temperature Row -->
-                  <div class="grid grid-cols-2 gap-3 mb-3">
-                    <div>
-                      <label class="mb-1 block text-xs font-medium text-surface-400">Model</label>
-                      <input
-                        type="text"
-                        bind:value={settings.systemServicesSettings.memory.model}
-                        onblur={() => settings.saveSystemServicesSettings()}
-                        placeholder="deepseek/deepseek-v3.2"
-                        class="input text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label class="mb-1 block text-xs font-medium text-surface-400">
-                        Temperature: {settings.systemServicesSettings.memory.temperature.toFixed(2)}
-                      </label>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        bind:value={settings.systemServicesSettings.memory.temperature}
-                        onchange={() => settings.saveSystemServicesSettings()}
-                        class="w-full h-2"
-                      />
-                    </div>
+                  <!-- Profile and Model Selector -->
+                  <div class="mb-3">
+                    <ModelSelector
+                      profileId={settings.systemServicesSettings.memory.profileId}
+                      model={settings.systemServicesSettings.memory.model}
+                      onProfileChange={(id) => {
+                        settings.systemServicesSettings.memory.profileId = id;
+                        settings.saveSystemServicesSettings();
+                      }}
+                      onModelChange={(m) => {
+                        settings.systemServicesSettings.memory.model = m;
+                        settings.saveSystemServicesSettings();
+                      }}
+                      onManageProfiles={() => { showProfileModal = true; editingProfile = null; }}
+                    />
+                  </div>
+
+                  <!-- Temperature -->
+                  <div class="mb-3">
+                    <label class="mb-1 block text-xs font-medium text-surface-400">
+                      Temperature: {settings.systemServicesSettings.memory.temperature.toFixed(2)}
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      bind:value={settings.systemServicesSettings.memory.temperature}
+                      onchange={() => settings.saveSystemServicesSettings()}
+                      class="w-full h-2"
+                    />
                   </div>
 
                   <!-- Chapter Analysis Prompt -->
@@ -1248,32 +1239,37 @@
             {#if showSuggestionsSection}
               <div class="mt-3 space-y-3">
                 <div class="card bg-surface-900 p-3">
-                  <!-- Model, Temperature, and Max Tokens Row -->
-                  <div class="grid grid-cols-2 gap-3 mb-3">
-                    <div>
-                      <label class="mb-1 block text-xs font-medium text-surface-400">Model</label>
-                      <input
-                        type="text"
-                        bind:value={settings.systemServicesSettings.suggestions.model}
-                        onblur={() => settings.saveSystemServicesSettings()}
-                        placeholder="deepseek/deepseek-v3.2"
-                        class="input text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label class="mb-1 block text-xs font-medium text-surface-400">
-                        Temperature: {settings.systemServicesSettings.suggestions.temperature.toFixed(2)}
-                      </label>
-                      <input
-                        type="range"
-                        min="0"
-                        max="2"
-                        step="0.05"
-                        bind:value={settings.systemServicesSettings.suggestions.temperature}
-                        onchange={() => settings.saveSystemServicesSettings()}
-                        class="w-full h-2"
-                      />
-                    </div>
+                  <!-- Profile and Model Selector -->
+                  <div class="mb-3">
+                    <ModelSelector
+                      profileId={settings.systemServicesSettings.suggestions.profileId}
+                      model={settings.systemServicesSettings.suggestions.model}
+                      onProfileChange={(id) => {
+                        settings.systemServicesSettings.suggestions.profileId = id;
+                        settings.saveSystemServicesSettings();
+                      }}
+                      onModelChange={(m) => {
+                        settings.systemServicesSettings.suggestions.model = m;
+                        settings.saveSystemServicesSettings();
+                      }}
+                      onManageProfiles={() => { showProfileModal = true; editingProfile = null; }}
+                    />
+                  </div>
+
+                  <!-- Temperature -->
+                  <div class="mb-3">
+                    <label class="mb-1 block text-xs font-medium text-surface-400">
+                      Temperature: {settings.systemServicesSettings.suggestions.temperature.toFixed(2)}
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="2"
+                      step="0.05"
+                      bind:value={settings.systemServicesSettings.suggestions.temperature}
+                      onchange={() => settings.saveSystemServicesSettings()}
+                      class="w-full h-2"
+                    />
                   </div>
 
                   <!-- Max Tokens -->
@@ -1371,32 +1367,37 @@
             {#if showStyleReviewerSection}
               <div class="mt-3 space-y-3">
                 <div class="card bg-surface-900 p-3">
-                  <!-- Model and Temperature Row -->
-                  <div class="grid grid-cols-2 gap-3 mb-3">
-                    <div>
-                      <label class="mb-1 block text-xs font-medium text-surface-400">Model</label>
-                      <input
-                        type="text"
-                        bind:value={settings.systemServicesSettings.styleReviewer.model}
-                        onblur={() => settings.saveSystemServicesSettings()}
-                        placeholder="x-ai/grok-4.1-fast"
-                        class="input text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label class="mb-1 block text-xs font-medium text-surface-400">
-                        Temperature: {settings.systemServicesSettings.styleReviewer.temperature.toFixed(2)}
-                      </label>
-                      <input
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        bind:value={settings.systemServicesSettings.styleReviewer.temperature}
-                        onchange={() => settings.saveSystemServicesSettings()}
-                        class="w-full h-2"
-                      />
-                    </div>
+                  <!-- Profile and Model Selector -->
+                  <div class="mb-3">
+                    <ModelSelector
+                      profileId={settings.systemServicesSettings.styleReviewer.profileId}
+                      model={settings.systemServicesSettings.styleReviewer.model}
+                      onProfileChange={(id) => {
+                        settings.systemServicesSettings.styleReviewer.profileId = id;
+                        settings.saveSystemServicesSettings();
+                      }}
+                      onModelChange={(m) => {
+                        settings.systemServicesSettings.styleReviewer.model = m;
+                        settings.saveSystemServicesSettings();
+                      }}
+                      onManageProfiles={() => { showProfileModal = true; editingProfile = null; }}
+                    />
+                  </div>
+
+                  <!-- Temperature -->
+                  <div class="mb-3">
+                    <label class="mb-1 block text-xs font-medium text-surface-400">
+                      Temperature: {settings.systemServicesSettings.styleReviewer.temperature.toFixed(2)}
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.05"
+                      bind:value={settings.systemServicesSettings.styleReviewer.temperature}
+                      onchange={() => settings.saveSystemServicesSettings()}
+                      class="w-full h-2"
+                    />
                   </div>
 
                   <!-- Trigger Interval -->
@@ -1561,32 +1562,37 @@
                   {#if settings.systemServicesSettings.timelineFill.mode === 'static'}
                     <!-- Static Mode Settings -->
                     <div class="border-t border-surface-700 pt-3 space-y-3">
-                      <!-- Model and Temperature Row -->
-                      <div class="grid grid-cols-2 gap-3">
-                        <div>
-                          <label class="mb-1 block text-xs font-medium text-surface-400">Model</label>
-                          <input
-                            type="text"
-                            bind:value={settings.systemServicesSettings.timelineFill.model}
-                            onblur={() => settings.saveSystemServicesSettings()}
-                            placeholder="x-ai/grok-4.1-fast"
-                            class="input text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label class="mb-1 block text-xs font-medium text-surface-400">
-                            Temperature: {settings.systemServicesSettings.timelineFill.temperature.toFixed(2)}
-                          </label>
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.05"
-                            bind:value={settings.systemServicesSettings.timelineFill.temperature}
-                            onchange={() => settings.saveSystemServicesSettings()}
-                            class="w-full h-2"
-                          />
-                        </div>
+                      <!-- Profile and Model Selector -->
+                      <div class="mb-3">
+                        <ModelSelector
+                          profileId={settings.systemServicesSettings.timelineFill.profileId}
+                          model={settings.systemServicesSettings.timelineFill.model}
+                          onProfileChange={(id) => {
+                            settings.systemServicesSettings.timelineFill.profileId = id;
+                            settings.saveSystemServicesSettings();
+                          }}
+                          onModelChange={(m) => {
+                            settings.systemServicesSettings.timelineFill.model = m;
+                            settings.saveSystemServicesSettings();
+                          }}
+                          onManageProfiles={() => { showProfileModal = true; editingProfile = null; }}
+                        />
+                      </div>
+
+                      <!-- Temperature -->
+                      <div>
+                        <label class="mb-1 block text-xs font-medium text-surface-400">
+                          Temperature: {settings.systemServicesSettings.timelineFill.temperature.toFixed(2)}
+                        </label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          bind:value={settings.systemServicesSettings.timelineFill.temperature}
+                          onchange={() => settings.saveSystemServicesSettings()}
+                          class="w-full h-2"
+                        />
                       </div>
 
                       <!-- Max Queries -->
@@ -1662,31 +1668,37 @@
                   {:else}
                     <!-- Agentic Mode Settings -->
                     <div class="border-t border-surface-700 pt-3 space-y-3">
-                      <div class="grid grid-cols-2 gap-3">
-                        <div>
-                          <label class="mb-1 block text-xs font-medium text-surface-400">Model</label>
-                          <input
-                            type="text"
-                            bind:value={settings.systemServicesSettings.agenticRetrieval.model}
-                            onblur={() => settings.saveSystemServicesSettings()}
-                            placeholder="minimax/minimax-m2.1"
-                            class="input text-sm"
-                          />
-                        </div>
-                        <div>
-                          <label class="mb-1 block text-xs font-medium text-surface-400">
-                            Temperature: {settings.systemServicesSettings.agenticRetrieval.temperature.toFixed(2)}
-                          </label>
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.05"
-                            bind:value={settings.systemServicesSettings.agenticRetrieval.temperature}
-                            onchange={() => settings.saveSystemServicesSettings()}
-                            class="w-full h-2"
-                          />
-                        </div>
+                      <!-- Profile and Model Selector -->
+                      <div class="mb-3">
+                        <ModelSelector
+                          profileId={settings.systemServicesSettings.agenticRetrieval.profileId}
+                          model={settings.systemServicesSettings.agenticRetrieval.model}
+                          onProfileChange={(id) => {
+                            settings.systemServicesSettings.agenticRetrieval.profileId = id;
+                            settings.saveSystemServicesSettings();
+                          }}
+                          onModelChange={(m) => {
+                            settings.systemServicesSettings.agenticRetrieval.model = m;
+                            settings.saveSystemServicesSettings();
+                          }}
+                          onManageProfiles={() => { showProfileModal = true; editingProfile = null; }}
+                        />
+                      </div>
+
+                      <!-- Temperature -->
+                      <div>
+                        <label class="mb-1 block text-xs font-medium text-surface-400">
+                          Temperature: {settings.systemServicesSettings.agenticRetrieval.temperature.toFixed(2)}
+                        </label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          bind:value={settings.systemServicesSettings.agenticRetrieval.temperature}
+                          onchange={() => settings.saveSystemServicesSettings()}
+                          class="w-full h-2"
+                        />
                       </div>
 
                       <div>
@@ -1761,3 +1773,11 @@
     </div>
   </div>
 </div>
+
+<!-- Profile Modal -->
+<ProfileModal
+  isOpen={showProfileModal}
+  editingProfile={editingProfile}
+  onClose={() => { showProfileModal = false; editingProfile = null; }}
+  onSave={handleProfileSave}
+/>
