@@ -1,6 +1,6 @@
 [package]
 name = "aventura"
-version = "0.2.4"
+version = "0.2.5"
 description = "AI-powered adventure and creative writing frontend"
 authors = ["Karelian"]
 edition = "2021"
