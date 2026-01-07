@@ -3,6 +3,7 @@
   import type { APIProfile } from '$lib/types';
   import { X, Plus, Trash2, RefreshCw, Check, AlertCircle } from 'lucide-svelte';
   import { ask } from '@tauri-apps/plugin-dialog';
+  import { fetch } from '@tauri-apps/plugin-http';
 
   // Check if the current profile can be deleted
   let canDelete = $derived(editingProfile ? settings.canDeleteProfile(editingProfile.id) : false);

@@ -15,6 +15,7 @@ import type {
 } from './types';
 import { settings } from '$lib/stores/settings.svelte';
 import { ui } from '$lib/stores/ui.svelte';
+import { fetch } from '@tauri-apps/plugin-http';
 
 export const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/' //Used as the default.
 const DEBUG = true;

@@ -67,6 +67,9 @@
   let downloadProgress = $state<UpdateProgress | null>(null);
   let updateError = $state<string | null>(null);
 
+  // Reset state - prevents modal close during reset operation
+  let isResettingSettings = $state(false);
+
   // Model fetching state
   let isLoadingModels = $state(false);
   let modelError = $state<string | null>(null);
@@ -442,7 +445,18 @@
     );
     if (!confirmed) return;
 
-    await settings.resetAllSettings(true);
+    isResettingSettings = true;
+    try {
+      await settings.resetAllSettings(true);
+    } finally {
+      isResettingSettings = false;
+    }
+  }
+
+  // Safe close that prevents closing during reset operations
+  function safeClose() {
+    if (isResettingSettings) return;
+    ui.closeSettings();
   }
 
   async function handleCheckForUpdates() {
@@ -504,11 +518,11 @@
 
   // Swipe down to dismiss modal on mobile
   function handleSwipeDown() {
-    ui.closeSettings();
+    safeClose();
   }
 </script>
 
-<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60" onclick={() => ui.closeSettings()}>
+<div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60" onclick={() => safeClose()}>
   <div
     class="card w-full sm:max-w-2xl max-h-[95vh] sm:max-h-[80vh] overflow-hidden rounded-b-none sm:rounded-b-xl flex flex-col"
     onclick={(e) => e.stopPropagation()}
@@ -522,7 +536,7 @@
     <!-- Header -->
     <div class="flex items-center justify-between border-b border-surface-700 pb-3 sm:pb-4 pt-0 sm:pt-0 flex-shrink-0">
       <h2 class="text-lg sm:text-xl font-semibold text-surface-100">Settings</h2>
-      <button class="btn-ghost rounded-lg p-2 min-h-[44px] min-w-[44px] flex items-center justify-center" onclick={() => ui.closeSettings()}>
+      <button class="btn-ghost rounded-lg p-2 min-h-[44px] min-w-[44px] flex items-center justify-center" onclick={() => safeClose()} disabled={isResettingSettings}>
         <X class="h-5 w-5" />
       </button>
     </div>
@@ -3323,11 +3337,17 @@
                 </p>
               </div>
               <button
-                class="px-4 py-2 text-sm font-medium text-red-400 border border-red-500/50 rounded-lg hover:bg-red-500/20 transition-colors flex items-center gap-2"
+                class="px-4 py-2 text-sm font-medium text-red-400 border border-red-500/50 rounded-lg hover:bg-red-500/20 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 onclick={handleResetAll}
+                disabled={isResettingSettings}
               >
-                <RotateCcw class="h-4 w-4" />
-                Reset All
+                {#if isResettingSettings}
+                  <Loader2 class="h-4 w-4 animate-spin" />
+                  Resetting...
+                {:else}
+                  <RotateCcw class="h-4 w-4" />
+                  Reset All
+                {/if}
               </button>
             </div>
           </div>

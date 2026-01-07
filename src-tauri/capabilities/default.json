@@ -26,6 +26,23 @@
     "updater:allow-download-and-install",
     "process:default",
     "process:allow-restart",
-    "process:allow-exit"
+    "process:allow-exit",
+    "http:default",
+    {
+      "identifier": "http:allow-fetch",
+      "allow": [{ "url": "https://*" }, { "url": "http://*" }]
+    },
+    {
+      "identifier": "http:allow-fetch-cancel",
+      "allow": [{ "url": "https://*" }, { "url": "http://*" }]
+    },
+    {
+      "identifier": "http:allow-fetch-read-body",
+      "allow": [{ "url": "https://*" }, { "url": "http://*" }]
+    },
+    {
+      "identifier": "http:allow-fetch-send",
+      "allow": [{ "url": "https://*" }, { "url": "http://*" }]
+    }
   ]
 }
