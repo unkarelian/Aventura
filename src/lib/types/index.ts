@@ -4,6 +4,14 @@ export type StoryMode = 'adventure' | 'creative-writing';
 export type POV = 'first' | 'second' | 'third';
 export type Tense = 'past' | 'present';
 
+// Time tracking for story progression
+export interface TimeTracker {
+  years: number;
+  days: number;
+  hours: number;
+  minutes: number;
+}
+
 export interface Story {
   id: string;
   title: string;
@@ -17,6 +25,7 @@ export interface Story {
   memoryConfig: MemoryConfig | null;
   retryState: PersistentRetryState | null;
   styleReviewState: PersistentStyleReviewState | null;
+  timeTracker: TimeTracker | null;
 }
 
 // Persistent retry state - lightweight version saved to database
@@ -38,6 +47,8 @@ export interface PersistentRetryState {
   itemIds: string[];
   storyBeatIds: string[];
   lorebookEntryIds: string[];
+  // Story time snapshot captured before the user action (optional for backwards compatibility)
+  timeTracker?: TimeTracker | null;
 }
 
 // Persistent style review state - saved per-story for style analysis tracking
@@ -94,6 +105,9 @@ export interface EntryMetadata {
   model?: string;
   generationTime?: number;
   source?: string;
+  // Story time tracking - captures in-story time at entry creation and after classification
+  timeStart?: TimeTracker;  // Story time when this entry began
+  timeEnd?: TimeTracker;    // Story time after classification applied time progression
 }
 
 export interface Character {
@@ -174,6 +188,10 @@ export interface Chapter {
   // Content
   summary: string;
 
+  // Story time span covered by this chapter
+  startTime: TimeTracker | null;
+  endTime: TimeTracker | null;
+
   // Retrieval optimization metadata
   keywords: string[];
   characters: string[];   // Character names mentioned
@@ -202,6 +220,8 @@ export interface Checkpoint {
   itemsSnapshot: Item[];
   storyBeatsSnapshot: StoryBeat[];
   chaptersSnapshot: Chapter[];
+  // Optional: undefined means "preserve current time" on restore (for backward compatibility)
+  timeTrackerSnapshot?: TimeTracker | null;
 
   createdAt: number;
 }
@@ -395,7 +415,7 @@ export interface AgenticSession {
 
 // UI State types
 export type ActivePanel = 'story' | 'library' | 'settings' | 'templates' | 'lorebook' | 'memory';
-export type SidebarTab = 'characters' | 'locations' | 'inventory' | 'quests';
+export type SidebarTab = 'characters' | 'locations' | 'inventory' | 'quests' | 'time';
 
 export interface UIState {
   activePanel: ActivePanel;

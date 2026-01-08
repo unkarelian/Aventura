@@ -14,10 +14,49 @@ export interface AventuraExport {
   storyBeats: StoryBeat[];
   lorebookEntries?: Entry[]; // Added in v1.1.0
   styleReviewState?: PersistentStyleReviewState | null; // Added in v1.2.0
+  // Note: story.timeTracker added in v1.3.0
 }
 
+// Version history for import compatibility
+// v1.0.0 - Initial release
+// v1.1.0 - Added lorebookEntries
+// v1.2.0 - Added styleReviewState
+// v1.3.0 - Added timeTracker to story, entry metadata (timeStart/timeEnd)
+
 class ExportService {
-  private readonly VERSION = '1.2.0';
+  private readonly VERSION = '1.3.0';
+
+  /**
+   * Compare semantic versions. Returns:
+   * - negative if a < b
+   * - 0 if a === b
+   * - positive if a > b
+   */
+  private compareVersions(a: string, b: string): number {
+    const partsA = a.split('.').map(Number);
+    const partsB = b.split('.').map(Number);
+    for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+      const partA = partsA[i] ?? 0;
+      const partB = partsB[i] ?? 0;
+      if (partA !== partB) return partA - partB;
+    }
+    return 0;
+  }
+
+  /**
+   * Log warnings for imports from older versions that may be missing features.
+   */
+  private logVersionCompatibilityWarnings(importVersion: string): void {
+    if (this.compareVersions(importVersion, '1.1.0') < 0) {
+      console.warn(`[Import] File from v${importVersion} predates lorebook entries (v1.1.0). Lorebook will be empty.`);
+    }
+    if (this.compareVersions(importVersion, '1.2.0') < 0) {
+      console.warn(`[Import] File from v${importVersion} predates style review state (v1.2.0). Style analysis history will be empty.`);
+    }
+    if (this.compareVersions(importVersion, '1.3.0') < 0) {
+      console.warn(`[Import] File from v${importVersion} predates time tracking (v1.3.0). Time tracker will start at zero.`);
+    }
+  }
 
   // Export to Aventura format (.avt - JSON)
   async exportToAventura(
@@ -210,6 +249,9 @@ class ExportService {
         return { success: false, error: 'Invalid story file: The file contains no story entries.' };
       }
 
+      // Log warnings for older export versions that may be missing newer features
+      this.logVersionCompatibilityWarnings(data.version);
+
       // Generate new IDs to avoid conflicts
       const oldToNewId = new Map<string, string>();
 
@@ -229,6 +271,7 @@ class ExportService {
         memoryConfig: data.story.memoryConfig || null,
         retryState: null, // Clear retry state on import
         styleReviewState: data.styleReviewState ?? null, // Restore style review state from export (v1.2.0+)
+        timeTracker: data.story.timeTracker ?? null, // Restore time tracker from export
       };
 
       await database.createStory(importedStory);

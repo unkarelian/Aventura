@@ -1,4 +1,4 @@
-import type { ActivePanel, SidebarTab, UIState, EntryType, StoryEntry, Character, Location, Item, StoryBeat, Entry, ActionInputType, PersistentStyleReviewState, PersistentStyleReviewResult } from '$lib/types';
+import type { ActivePanel, SidebarTab, UIState, EntryType, StoryEntry, Character, Location, Item, StoryBeat, Entry, ActionInputType, PersistentStyleReviewState, PersistentStyleReviewResult, TimeTracker } from '$lib/types';
 import type { ActionChoice } from '$lib/services/ai/actionChoices';
 import type { StorySuggestion } from '$lib/services/ai/suggestions';
 import type { StyleReviewResult } from '$lib/services/ai/styleReviewer';
@@ -51,6 +51,8 @@ export interface RetryBackup {
   itemIds: string[];
   storyBeatIds: string[];
   lorebookEntryIds: string[];
+  // Time tracker snapshot (undefined means "don't restore", null means "clear it")
+  timeTracker: TimeTracker | null | undefined;
 }
 
 // Error state for retry functionality
@@ -275,7 +277,8 @@ class UIStore {
     userActionContent: string,
     rawInput: string,
     actionType: ActionInputType,
-    wasRawActionChoice: boolean
+    wasRawActionChoice: boolean,
+    timeTracker: TimeTracker | null
   ) {
     const timestamp = Date.now();
     const nextEntryPosition = entries.reduce((max, entry) => Math.max(max, entry.position ?? -1), -1) + 1;
@@ -315,6 +318,8 @@ class UIStore {
       itemIds,
       storyBeatIds,
       lorebookEntryIds,
+      // Time tracker snapshot
+      timeTracker: timeTracker ? { ...timeTracker } : null,
     };
     this.retryBackups.set(storyId, backup);
     this.currentRetryStoryId = storyId;
@@ -333,6 +338,7 @@ class UIStore {
         itemIds,
         storyBeatIds,
         lorebookEntryIds,
+        timeTracker: timeTracker ? { ...timeTracker } : null,
       }),
       'persist'
     );
@@ -394,6 +400,7 @@ class UIStore {
     itemIds?: string[];
     storyBeatIds?: string[];
     lorebookEntryIds?: string[];
+    timeTracker?: TimeTracker | null;
   }) {
     // Skip if we already have an in-memory backup for this story (it's more complete)
     if (this.retryBackups.has(storyId)) {
@@ -448,6 +455,10 @@ class UIStore {
       itemIds: retryState.itemIds ?? [],
       storyBeatIds: retryState.storyBeatIds ?? [],
       lorebookEntryIds: retryState.lorebookEntryIds ?? [],
+      // Time tracker snapshot (undefined means "skip restore", null means "clear")
+      timeTracker: Object.prototype.hasOwnProperty.call(retryState, 'timeTracker')
+        ? retryState.timeTracker ?? null
+        : undefined,
     };
     this.retryBackups.set(storyId, backup);
     console.log('[UI] Retry backup loaded from persistent state', {

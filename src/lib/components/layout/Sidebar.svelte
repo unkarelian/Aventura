@@ -1,11 +1,12 @@
 <script lang="ts">
   import { ui } from '$lib/stores/ui.svelte';
   import { story } from '$lib/stores/story.svelte';
-  import { Users, MapPin, Backpack, Scroll } from 'lucide-svelte';
+  import { Users, MapPin, Backpack, Scroll, Clock } from 'lucide-svelte';
   import CharacterPanel from '$lib/components/world/CharacterPanel.svelte';
   import LocationPanel from '$lib/components/world/LocationPanel.svelte';
   import InventoryPanel from '$lib/components/world/InventoryPanel.svelte';
   import QuestPanel from '$lib/components/world/QuestPanel.svelte';
+  import TimePanel from '$lib/components/world/TimePanel.svelte';
   import { swipe } from '$lib/utils/swipe';
 
   const tabs = [
@@ -13,6 +14,7 @@
     { id: 'locations' as const, icon: MapPin, label: 'Locations' },
     { id: 'inventory' as const, icon: Backpack, label: 'Inventory' },
     { id: 'quests' as const, icon: Scroll, label: 'Quests' },
+    { id: 'time' as const, icon: Clock, label: 'Time' },
   ];
 
   function handleSwipeLeft() {
@@ -67,6 +69,8 @@
       <InventoryPanel />
     {:else if ui.sidebarTab === 'quests'}
       <QuestPanel />
+    {:else if ui.sidebarTab === 'time'}
+      <TimePanel />
     {/if}
   </div>
 </aside>

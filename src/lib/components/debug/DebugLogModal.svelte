@@ -1,8 +1,9 @@
 <script lang="ts">
   import { ui, type DebugLogEntry } from '$lib/stores/ui.svelte';
-  import { X, ArrowUpCircle, ArrowDownCircle, Trash2, Copy, Check } from 'lucide-svelte';
+  import { X, ArrowUpCircle, ArrowDownCircle, Trash2, Copy, Check, WrapText } from 'lucide-svelte';
 
   let copiedId = $state<string | null>(null);
+  let renderNewlines = $state(false);
 
   function formatTimestamp(timestamp: number): string {
     return new Date(timestamp).toLocaleTimeString('en-US', {
@@ -22,7 +23,12 @@
 
   function formatJson(data: Record<string, unknown>): string {
     try {
-      return JSON.stringify(data, null, 2);
+      let json = JSON.stringify(data, null, 2);
+      if (renderNewlines) {
+        // Replace escaped newlines with actual newlines in string values
+        json = json.replace(/\\n/g, '\n');
+      }
+      return json;
     } catch {
       return String(data);
     }
@@ -96,6 +102,13 @@
           </span>
         </div>
         <div class="flex items-center gap-2">
+          <button
+            class="btn-ghost rounded-lg p-2 {renderNewlines ? 'text-blue-400' : 'text-surface-400 hover:text-surface-200'}"
+            onclick={() => renderNewlines = !renderNewlines}
+            title={renderNewlines ? 'Show escaped newlines (\\n)' : 'Render newlines as line breaks'}
+          >
+            <WrapText class="h-4 w-4" />
+          </button>
           <button
             class="btn-ghost rounded-lg p-2 text-surface-400 hover:text-red-400"
             onclick={handleClearLogs}

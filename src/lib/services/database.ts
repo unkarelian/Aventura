@@ -16,6 +16,7 @@ import type {
   EntryPreview,
   PersistentRetryState,
   PersistentStyleReviewState,
+  TimeTracker,
 } from '$lib/types';
 
 class DatabaseService {
@@ -85,9 +86,10 @@ class DatabaseService {
         settings,
         memory_config,
         retry_state,
-        style_review_state
+        style_review_state,
+        time_tracker
       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         story.id,
         story.title,
@@ -101,6 +103,7 @@ class DatabaseService {
         story.memoryConfig ? JSON.stringify(story.memoryConfig) : null,
         story.retryState ? JSON.stringify(story.retryState) : null,
         story.styleReviewState ? JSON.stringify(story.styleReviewState) : null,
+        story.timeTracker ? JSON.stringify(story.timeTracker) : null,
       ]
     );
     return { ...story, createdAt: now, updatedAt: now };
@@ -143,6 +146,10 @@ class DatabaseService {
     if (updates.styleReviewState !== undefined) {
       setClauses.push('style_review_state = ?');
       values.push(updates.styleReviewState ? JSON.stringify(updates.styleReviewState) : null);
+    }
+    if (updates.timeTracker !== undefined) {
+      setClauses.push('time_tracker = ?');
+      values.push(updates.timeTracker ? JSON.stringify(updates.timeTracker) : null);
     }
 
     values.push(id);
@@ -192,6 +199,28 @@ class DatabaseService {
     const db = await this.getDb();
     await db.execute(
       'UPDATE stories SET style_review_state = NULL WHERE id = ?',
+      [storyId]
+    );
+  }
+
+  /**
+   * Save time tracker for a story.
+   */
+  async saveTimeTracker(storyId: string, timeTracker: TimeTracker): Promise<void> {
+    const db = await this.getDb();
+    await db.execute(
+      'UPDATE stories SET time_tracker = ? WHERE id = ?',
+      [JSON.stringify(timeTracker), storyId]
+    );
+  }
+
+  /**
+   * Clear time tracker for a story.
+   */
+  async clearTimeTracker(storyId: string): Promise<void> {
+    const db = await this.getDb();
+    await db.execute(
+      'UPDATE stories SET time_tracker = NULL WHERE id = ?',
       [storyId]
     );
   }
@@ -537,9 +566,9 @@ class DatabaseService {
     await db.execute(
       `INSERT INTO chapters (
         id, story_id, number, title, start_entry_id, end_entry_id, entry_count,
-        summary, keywords, characters, locations, plot_threads, emotional_tone,
+        summary, start_time, end_time, keywords, characters, locations, plot_threads, emotional_tone,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         chapter.id,
         chapter.storyId,
@@ -549,6 +578,8 @@ class DatabaseService {
         chapter.endEntryId,
         chapter.entryCount,
         chapter.summary,
+        chapter.startTime ? JSON.stringify(chapter.startTime) : null,
+        chapter.endTime ? JSON.stringify(chapter.endTime) : null,
         JSON.stringify(chapter.keywords),
         JSON.stringify(chapter.characters),
         JSON.stringify(chapter.locations),
@@ -566,6 +597,8 @@ class DatabaseService {
 
     if (updates.title !== undefined) { setClauses.push('title = ?'); values.push(updates.title); }
     if (updates.summary !== undefined) { setClauses.push('summary = ?'); values.push(updates.summary); }
+    if (updates.startTime !== undefined) { setClauses.push('start_time = ?'); values.push(updates.startTime ? JSON.stringify(updates.startTime) : null); }
+    if (updates.endTime !== undefined) { setClauses.push('end_time = ?'); values.push(updates.endTime ? JSON.stringify(updates.endTime) : null); }
     if (updates.keywords !== undefined) { setClauses.push('keywords = ?'); values.push(JSON.stringify(updates.keywords)); }
     if (updates.characters !== undefined) { setClauses.push('characters = ?'); values.push(JSON.stringify(updates.characters)); }
     if (updates.locations !== undefined) { setClauses.push('locations = ?'); values.push(JSON.stringify(updates.locations)); }
@@ -607,8 +640,8 @@ class DatabaseService {
       `INSERT INTO checkpoints (
         id, story_id, name, last_entry_id, last_entry_preview, entry_count,
         entries_snapshot, characters_snapshot, locations_snapshot,
-        items_snapshot, story_beats_snapshot, chapters_snapshot, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        items_snapshot, story_beats_snapshot, chapters_snapshot, time_tracker_snapshot, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         checkpoint.id,
         checkpoint.storyId,
@@ -622,6 +655,7 @@ class DatabaseService {
         JSON.stringify(checkpoint.itemsSnapshot),
         JSON.stringify(checkpoint.storyBeatsSnapshot),
         JSON.stringify(checkpoint.chaptersSnapshot),
+        checkpoint.timeTrackerSnapshot ? JSON.stringify(checkpoint.timeTrackerSnapshot) : null,
         checkpoint.createdAt,
       ]
     );
@@ -915,6 +949,7 @@ class DatabaseService {
       memoryConfig: row.memory_config ? JSON.parse(row.memory_config) : null,
       retryState: row.retry_state ? JSON.parse(row.retry_state) : null,
       styleReviewState: row.style_review_state ? JSON.parse(row.style_review_state) : null,
+      timeTracker: row.time_tracker ? JSON.parse(row.time_tracker) : null,
     };
   }
 
@@ -1007,6 +1042,8 @@ class DatabaseService {
       endEntryId: row.end_entry_id,
       entryCount: row.entry_count,
       summary: row.summary,
+      startTime: row.start_time ? JSON.parse(row.start_time) : null,
+      endTime: row.end_time ? JSON.parse(row.end_time) : null,
       keywords: row.keywords ? JSON.parse(row.keywords) : [],
       characters: row.characters ? JSON.parse(row.characters) : [],
       locations: row.locations ? JSON.parse(row.locations) : [],
@@ -1030,6 +1067,8 @@ class DatabaseService {
       itemsSnapshot: row.items_snapshot ? JSON.parse(row.items_snapshot) : [],
       storyBeatsSnapshot: row.story_beats_snapshot ? JSON.parse(row.story_beats_snapshot) : [],
       chaptersSnapshot: row.chapters_snapshot ? JSON.parse(row.chapters_snapshot) : [],
+      // Use null when missing - old checkpoints without time tracking should reset time to null on restore
+      timeTrackerSnapshot: row.time_tracker_snapshot ? JSON.parse(row.time_tracker_snapshot) : null,
       createdAt: row.created_at,
     };
   }

@@ -1,5 +1,5 @@
 import type { OpenAIProvider as OpenAIProvider } from './openrouter';
-import type { Character, Location, Item, StoryBeat } from '$lib/types';
+import type { Character, Location, Item, StoryBeat, StoryEntry, TimeTracker } from '$lib/types';
 import { settings, type ClassifierSettings } from '$lib/stores/settings.svelte';
 import { buildExtraBody } from './requestOverrides';
 
@@ -100,6 +100,14 @@ export interface StoryBeatUpdate {
   };
 }
 
+// Chat history entry with time metadata for classification
+export interface ClassificationChatEntry {
+  role: 'user' | 'assistant';
+  content: string;
+  timeStart?: TimeTracker | null;
+  timeEnd?: TimeTracker | null;
+}
+
 // Context for classification
 export interface ClassificationContext {
   narrativeResponse: string;
@@ -110,6 +118,10 @@ export interface ClassificationContext {
   existingStoryBeats: StoryBeat[];
   genre: string | null;
   storyMode: 'adventure' | 'creative-writing';
+  // Chat history with time metadata for context-aware classification
+  chatHistory?: ClassificationChatEntry[];
+  // Current story time for reference
+  currentStoryTime?: TimeTracker | null;
 }
 
 export class ClassifierService {
@@ -137,6 +149,10 @@ export class ClassifierService {
     return this.settingsOverride?.systemPrompt ?? settings.systemServicesSettings.classifier.systemPrompt;
   }
 
+  private get chatHistoryTruncation(): number {
+    return this.settingsOverride?.chatHistoryTruncation ?? settings.systemServicesSettings.classifier.chatHistoryTruncation ?? 100;
+  }
+
   async classify(context: ClassificationContext): Promise<ClassificationResult> {
     log('classify called', {
       model: this.model,
@@ -146,6 +162,8 @@ export class ClassifierService {
       existingCharacters: context.existingCharacters.length,
       existingLocations: context.existingLocations.length,
       existingItems: context.existingItems.length,
+      chatHistoryEntries: context.chatHistory?.length ?? 0,
+      currentStoryTime: context.currentStoryTime,
     });
 
     const prompt = this.buildClassificationPrompt(context);
@@ -197,6 +215,48 @@ export class ClassifierService {
     }
   }
 
+  private formatTime(time: TimeTracker | null | undefined): string {
+    if (!time) return 'unknown';
+    const parts: string[] = [];
+    if (time.years > 0) parts.push(`Year ${time.years}`);
+    if (time.days > 0) parts.push(`Day ${time.days}`);
+    if (time.hours > 0 || time.minutes > 0) {
+      const hour = time.hours.toString().padStart(2, '0');
+      const minute = time.minutes.toString().padStart(2, '0');
+      parts.push(`${hour}:${minute}`);
+    }
+    return parts.length > 0 ? parts.join(', ') : 'Day 0, 00:00';
+  }
+
+  private truncateToWords(text: string, maxWords: number): string {
+    if (maxWords <= 0) return text; // 0 = no truncation
+    const words = text.split(/\s+/);
+    if (words.length <= maxWords) return text;
+    return words.slice(0, maxWords).join(' ') + '...';
+  }
+
+  private buildChatHistoryBlock(chatHistory: ClassificationChatEntry[] | undefined): string {
+    if (!chatHistory || chatHistory.length === 0) return '';
+
+    const truncationLimit = this.chatHistoryTruncation;
+
+    const formattedEntries = chatHistory.map((entry, index) => {
+      const roleLabel = entry.role === 'user' ? 'USER' : 'ASSISTANT';
+      const timeInfo = entry.timeEnd ? ` [Story Time: ${this.formatTime(entry.timeEnd)}]` : '';
+      // Truncate by words (0 = no truncation)
+      const truncatedContent = this.truncateToWords(entry.content, truncationLimit);
+      return `[${index + 1}] ${roleLabel}${timeInfo}:\n${truncatedContent}`;
+    }).join('\n\n');
+
+    return `
+## Chat History (with story time)
+The following is the visible chat history. Use this to understand context and track when time was last advanced.
+Each ASSISTANT message shows the story time AFTER that message (timeEnd).
+
+${formattedEntries}
+`;
+  }
+
   private buildClassificationPrompt(context: ClassificationContext): string {
     // Include traits for characters so the classifier can decide when to prune
     const existingCharacterInfo = context.existingCharacters.map(c => {
@@ -226,17 +286,26 @@ export class ClassifierService {
       ? "plot_point|revelation|milestone|event"
       : "quest|revelation|milestone|event";
 
+    // Build chat history block if available
+    const chatHistoryBlock = this.buildChatHistoryBlock(context.chatHistory);
+
+    // Build current time reference
+    const currentTimeInfo = context.currentStoryTime
+      ? `Current Story Time: ${this.formatTime(context.currentStoryTime)}`
+      : '';
+
     return `Analyze this narrative passage and extract world state changes.
 
 ## Context
 ${context.genre ? `Genre: ${context.genre}` : ''}
 Mode: ${isCreativeMode ? 'Creative Writing (author directing the story)' : 'Adventure (player as protagonist)'}
 Already tracking: ${existingCharacterInfo.length} characters, ${existingLocationNames.length} locations, ${existingItemNames.length} items
-
+${currentTimeInfo}
+${chatHistoryBlock}
 ## ${inputLabel}
 "${context.userAction}"
 
-## The Narrative Response
+## The Narrative Response (to classify)
 """
 ${context.narrativeResponse}
 """
@@ -302,6 +371,11 @@ newStoryBeats: [{"title": "Short Title", "description": "what happened or was le
 scene.currentLocationName: ${sceneLocationDesc}
 scene.presentCharacterNames: Names of characters physically present in the scene
 scene.timeProgression: How much time passed - "none", "minutes", "hours", or "days"
+- Look at the chat history timestamps to see when time was last advanced
+- If multiple messages have passed without time advancing, consider whether this narrative should advance time
+- Actions like traveling, sleeping, waiting, or scene transitions typically warrant time progression
+- Quick dialogue exchanges or immediate actions within the same scene may be "none"
+- IMPORTANT: If 3 or more messages have passed without any time advancement, you should advance time by at least "minutes" - even casual dialogue takes time in the story world
 
 Return valid JSON only. Empty arrays are fine - don't invent entities that aren't clearly in the text.`;
   }

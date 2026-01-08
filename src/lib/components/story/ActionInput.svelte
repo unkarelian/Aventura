@@ -243,6 +243,13 @@
 
     // Create the chapter - use database method to handle deletions correctly
     const chapterNumber = await story.getNextChapterNumber();
+
+    // Extract time range from entries' metadata
+    const firstEntry = chapterEntries[0];
+    const lastEntry = chapterEntries[chapterEntries.length - 1];
+    const startTime = firstEntry.metadata?.timeStart ?? null;
+    const endTime = lastEntry.metadata?.timeEnd ?? null;
+
     const chapter: Chapter = {
       id: crypto.randomUUID(),
       storyId: story.currentStory.id,
@@ -252,6 +259,8 @@
       endEntryId: chapterEntries[chapterEntries.length - 1].id,
       entryCount: chapterEntries.length,
       summary: summary.summary,
+      startTime,
+      endTime,
       keywords: summary.keywords,
       characters: summary.characters,
       locations: summary.locations,
@@ -714,13 +723,18 @@
         emitNarrativeResponse(narrationEntry.id, fullResponse);
 
         // Phase 3: Classify the response to extract world state changes
+        // Pass visible entries so classifier can see full chat history with time data
+        // Filter out the current narration entry to avoid sending it twice (once in chatHistory, once as narrativeResponse)
         log('Starting classification phase...');
         try {
+          const chatHistoryEntries = story.visibleEntries.filter(e => e.id !== narrationEntry.id);
           const classificationResult = await aiService.classifyResponse(
             fullResponse,
             userActionContent,
             worldState,
-            currentStoryRef
+            currentStoryRef,
+            chatHistoryEntries,
+            currentStoryRef?.timeTracker
           );
 
           log('Classification complete', {
@@ -745,6 +759,10 @@
           log('Classification failed (non-fatal)', classifyError);
           console.warn('World state classification failed:', classifyError);
         }
+
+        // Phase 4.1: Update narration entry with timeEnd after classification phase
+        // This runs regardless of classification success - timeEnd reflects current story time
+        await story.updateEntryTimeEnd(narrationEntry.id);
 
         // Phase 5: Check if auto-summarization is needed (background, non-blocking)
         if (story.memoryConfig.autoSummarize) {
@@ -860,7 +878,8 @@
         content,
         rawInput,
         actionType,
-        wasRawActionChoice
+        wasRawActionChoice,
+        story.currentStory.timeTracker
       );
     }
 
@@ -938,6 +957,7 @@
           items: backup.items,
           storyBeats: backup.storyBeats,
           lorebookEntries: backup.lorebookEntries,
+          timeTracker: backup.timeTracker,
         });
       } else {
         // Persistent restore - delete entries and entities created after backup
@@ -959,6 +979,9 @@
         } else {
           log('Persistent stop restore: skipping entity cleanup (no ID snapshot)');
         }
+
+        // Restore time tracker snapshot after persistent cleanup
+        await story.restoreTimeTrackerSnapshot(backup.timeTracker);
       }
 
       await tick();
@@ -1072,6 +1095,7 @@
           items: backup.items,
           storyBeats: backup.storyBeats,
           lorebookEntries: backup.lorebookEntries,
+          timeTracker: backup.timeTracker,
         });
       } else {
         // Persistent restore (backup without full snapshots, but with entity IDs)
@@ -1094,6 +1118,9 @@
         } else {
           log('Persistent restore: skipping entity cleanup (no ID snapshot)');
         }
+
+        // Restore time tracker snapshot after persistent cleanup
+        await story.restoreTimeTrackerSnapshot(backup.timeTracker);
       }
 
       // Wait for state to sync

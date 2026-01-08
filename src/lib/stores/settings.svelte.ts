@@ -367,6 +367,7 @@ export interface ClassifierSettings {
   reasoningEffort: ReasoningEffort;
   providerOnly: string[];
   manualBody: string;
+  chatHistoryTruncation: number;  // Max words per chat history entry (0 = no truncation, up to 500)
 }
 
 export function getDefaultClassifierSettings(): ClassifierSettings {
@@ -379,6 +380,7 @@ export function getDefaultClassifierSettings(): ClassifierSettings {
     reasoningEffort: 'medium',
     providerOnly: [],
     manualBody: '',
+    chatHistoryTruncation: 100,  // Default: truncate to 100 words per entry
   };
 }
 
@@ -395,6 +397,7 @@ export function getDefaultClassifierSettingsForProvider(provider: ProviderPreset
     reasoningEffort: 'medium',
     providerOnly: [],
     manualBody: '',
+    chatHistoryTruncation: 100,  // Default: truncate to 100 words per entry
   };
 }
 

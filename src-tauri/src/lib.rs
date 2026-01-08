@@ -52,6 +52,24 @@ pub fn run() {
             sql: include_str!("../migrations/007_story_style_review_state.sql"),
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 8,
+            description: "add_story_time_tracker",
+            sql: include_str!("../migrations/008_story_time_tracker.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 9,
+            description: "add_checkpoint_time_tracker",
+            sql: include_str!("../migrations/009_checkpoint_time_tracker.sql"),
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 10,
+            description: "add_chapter_time_fields",
+            sql: include_str!("../migrations/010_chapter_time_fields.sql"),
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

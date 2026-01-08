@@ -1,7 +1,7 @@
 import { settings } from '$lib/stores/settings.svelte';
 import { OpenAIProvider as OpenAIProvider } from './openrouter';
 import { BUILTIN_TEMPLATES } from '$lib/services/templates';
-import { ClassifierService, type ClassificationResult, type ClassificationContext } from './classifier';
+import { ClassifierService, type ClassificationResult, type ClassificationContext, type ClassificationChatEntry } from './classifier';
 import { MemoryService, type ChapterAnalysis, type ChapterSummary, type RetrievalDecision, DEFAULT_MEMORY_CONFIG } from './memory';
 import { SuggestionsService, type StorySuggestion, type SuggestionsResult } from './suggestions';
 import { ActionChoicesService, type ActionChoice, type ActionChoicesResult } from './actionChoices';
@@ -13,7 +13,7 @@ import { ContextBuilder, type ContextResult, type ContextConfig, DEFAULT_CONTEXT
 import { EntryRetrievalService, getEntryRetrievalConfigFromSettings, type EntryRetrievalResult, type ActivationTracker } from './entryRetrieval';
 import { buildExtraBody } from './requestOverrides';
 import type { Message, GenerationResponse, StreamChunk } from './types';
-import type { Story, StoryEntry, Character, Location, Item, StoryBeat, Chapter, MemoryConfig, Entry, LoreManagementResult } from '$lib/types';
+import type { Story, StoryEntry, Character, Location, Item, StoryBeat, Chapter, MemoryConfig, Entry, LoreManagementResult, TimeTracker } from '$lib/types';
 
 const DEBUG = true;
 
@@ -309,16 +309,30 @@ class AIService {
     narrativeResponse: string,
     userAction: string,
     worldState: WorldState,
-    story?: Story | null
+    story?: Story | null,
+    visibleEntries?: StoryEntry[],
+    currentStoryTime?: TimeTracker | null
   ): Promise<ClassificationResult> {
     log('classifyResponse called', {
       responseLength: narrativeResponse.length,
       userActionLength: userAction.length,
       genre: story?.genre,
+      visibleEntriesCount: visibleEntries?.length ?? 0,
+      currentStoryTime,
     });
 
     const provider = this.getProviderForProfile(settings.systemServicesSettings.classifier.profileId);
     const classifier = new ClassifierService(provider);
+
+    // Build chat history from visible entries with time metadata
+    const chatHistory: ClassificationChatEntry[] = (visibleEntries ?? [])
+      .filter(e => e.type === 'user_action' || e.type === 'narration')
+      .map(e => ({
+        role: e.type === 'user_action' ? 'user' as const : 'assistant' as const,
+        content: e.content,
+        timeStart: e.metadata?.timeStart ?? null,
+        timeEnd: e.metadata?.timeEnd ?? null,
+      }));
 
     const context: ClassificationContext = {
       narrativeResponse,
@@ -329,6 +343,8 @@ class AIService {
       existingStoryBeats: worldState.storyBeats,
       genre: story?.genre ?? null,
       storyMode: story?.mode ?? 'adventure',
+      chatHistory,
+      currentStoryTime,
     };
 
     const result = await classifier.classify(context);

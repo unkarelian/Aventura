@@ -1,4 +1,4 @@
-import type { Story, StoryEntry, Character, Location, Item, StoryBeat, Chapter, Checkpoint, MemoryConfig, StoryMode, StorySettings, Entry } from '$lib/types';
+import type { Story, StoryEntry, Character, Location, Item, StoryBeat, Chapter, Checkpoint, MemoryConfig, StoryMode, StorySettings, Entry, TimeTracker } from '$lib/types';
 import { database } from '$lib/services/database';
 import { BUILTIN_TEMPLATES } from '$lib/services/templates';
 import { ui } from './ui.svelte';
@@ -97,6 +97,10 @@ class StoryStore {
 
   get storyMode(): StoryMode {
     return this.currentStory?.mode || 'adventure';
+  }
+
+  get timeTracker(): TimeTracker {
+    return this.currentStory?.timeTracker || { years: 0, days: 0, hours: 0, minutes: 0 };
   }
 
   get lastChapterEndIndex(): number {
@@ -350,6 +354,7 @@ class StoryStore {
       memoryConfig: DEFAULT_MEMORY_CONFIG,
       retryState: null,
       styleReviewState: null,
+      timeTracker: null,
     });
 
     this.allStories = [storyData, ...this.allStories];
@@ -382,6 +387,7 @@ class StoryStore {
       memoryConfig: DEFAULT_MEMORY_CONFIG,
       retryState: null,
       styleReviewState: null,
+      timeTracker: null,
     });
 
     this.allStories = [storyData, ...this.allStories];
@@ -440,6 +446,7 @@ class StoryStore {
       // Add opening scene as first narration entry
       if (state.openingScene) {
         const tokenCount = countTokens(state.openingScene);
+        const baseTime = storyData.timeTracker ?? { years: 0, days: 0, hours: 0, minutes: 0 };
         await database.addStoryEntry({
           id: crypto.randomUUID(),
           storyId: storyData.id,
@@ -447,7 +454,7 @@ class StoryStore {
           content: state.openingScene,
           parentId: null,
           position: 0,
-          metadata: { source: 'template', tokenCount },
+          metadata: { source: 'template', tokenCount, timeStart: { ...baseTime }, timeEnd: { ...baseTime } },
         });
       }
     }
@@ -467,6 +474,13 @@ class StoryStore {
     // Count tokens for accurate auto-summarize threshold detection
     const tokenCount = countTokens(content);
 
+    // Capture current story time as timeStart for this entry
+    // timeEnd defaults to timeStart; for narration entries, timeEnd is updated after classification
+    const timeStart = this.currentStory.timeTracker
+      ? { ...this.currentStory.timeTracker }
+      : { years: 0, days: 0, hours: 0, minutes: 0 };
+    const timeEnd = { ...timeStart };
+
     const position = await database.getNextEntryPosition(this.currentStory.id);
     const entry = await database.addStoryEntry({
       id: crypto.randomUUID(),
@@ -475,7 +489,7 @@ class StoryStore {
       content,
       parentId: null,
       position,
-      metadata: { ...metadata, tokenCount },
+      metadata: { ...metadata, tokenCount, timeStart, timeEnd },
     });
 
     this.entries = [...this.entries, entry];
@@ -513,6 +527,34 @@ class StoryStore {
 
     // Update story's updatedAt
     await database.updateStory(this.currentStory.id, {});
+  }
+
+  /**
+   * Update an entry's timeEnd metadata after classification applies time progression.
+   * Called after applyClassificationResult to record the story time after the entry's events.
+   */
+  async updateEntryTimeEnd(entryId: string): Promise<void> {
+    if (!this.currentStory) throw new Error('No story loaded');
+
+    const entry = this.entries.find(e => e.id === entryId);
+    if (!entry) {
+      log('updateEntryTimeEnd: Entry not found', entryId);
+      return;
+    }
+
+    // Capture current story time as timeEnd
+    const timeEnd = this.currentStory.timeTracker
+      ? { ...this.currentStory.timeTracker }
+      : { years: 0, days: 0, hours: 0, minutes: 0 };
+
+    const updatedMetadata = { ...entry.metadata, timeEnd };
+
+    await database.updateStoryEntry(entryId, { metadata: updatedMetadata });
+    this.entries = this.entries.map(e =>
+      e.id === entryId ? { ...e, metadata: updatedMetadata } : e
+    );
+
+    log('Entry timeEnd updated', { entryId, timeEnd });
   }
 
   /**
@@ -1214,6 +1256,11 @@ class StoryStore {
       }
     }
 
+    // Apply time progression from scene data
+    if (result.scene.timeProgression && result.scene.timeProgression !== 'none') {
+      await this.applyTimeProgression(result.scene.timeProgression);
+    }
+
     log('applyClassificationResult complete', {
       characters: this.characters.length,
       locations: this.locations.length,
@@ -1349,6 +1396,128 @@ class StoryStore {
     log('Memory config updated via updateMemoryConfig:', updates);
   }
 
+  /**
+   * Normalize time values, converting overflow/underflow between units.
+   * Handles both positive overflow (60 min → 1 hour) and negative underflow (borrowing).
+   * 60 minutes → 1 hour, 24 hours → 1 day, 365 days → 1 year
+   */
+  private normalizeTime(time: TimeTracker): TimeTracker {
+    let { years, days, hours, minutes } = time;
+
+    // Handle negative minutes by borrowing from hours
+    while (minutes < 0 && hours > 0) {
+      hours -= 1;
+      minutes += 60;
+    }
+
+    // Handle negative hours by borrowing from days
+    while (hours < 0 && days > 0) {
+      days -= 1;
+      hours += 24;
+    }
+
+    // Handle negative days by borrowing from years
+    while (days < 0 && years > 0) {
+      years -= 1;
+      days += 365;
+    }
+
+    // Clamp any remaining negatives to 0 (can't have negative time)
+    years = Math.max(0, years);
+    days = Math.max(0, days);
+    hours = Math.max(0, hours);
+    minutes = Math.max(0, minutes);
+
+    // Normalize overflow: minutes to hours
+    if (minutes >= 60) {
+      hours += Math.floor(minutes / 60);
+      minutes = minutes % 60;
+    }
+
+    // Normalize overflow: hours to days
+    if (hours >= 24) {
+      days += Math.floor(hours / 24);
+      hours = hours % 24;
+    }
+
+    // Normalize overflow: days to years
+    if (days >= 365) {
+      years += Math.floor(days / 365);
+      days = days % 365;
+    }
+
+    return { years, days, hours, minutes };
+  }
+
+  // Set time tracker directly
+  async setTimeTracker(time: TimeTracker): Promise<void> {
+    if (!this.currentStory) throw new Error('No story loaded');
+
+    const normalized = this.normalizeTime(time);
+    await database.saveTimeTracker(this.currentStory.id, normalized);
+    this.currentStory = { ...this.currentStory, timeTracker: normalized };
+    log('Time tracker set:', normalized);
+  }
+
+  // Update time tracker with partial values (adds to current time)
+  async addTime(updates: Partial<TimeTracker>): Promise<void> {
+    if (!this.currentStory) throw new Error('No story loaded');
+
+    const current = this.timeTracker;
+    const newTime: TimeTracker = {
+      years: current.years + (updates.years ?? 0),
+      days: current.days + (updates.days ?? 0),
+      hours: current.hours + (updates.hours ?? 0),
+      minutes: current.minutes + (updates.minutes ?? 0),
+    };
+
+    const normalized = this.normalizeTime(newTime);
+    await database.saveTimeTracker(this.currentStory.id, normalized);
+    this.currentStory = { ...this.currentStory, timeTracker: normalized };
+    log('Time added:', updates, '→', normalized);
+  }
+
+  /**
+   * Apply time progression from classifier result.
+   * Adds a default amount based on the progression type.
+   */
+  async applyTimeProgression(progression: 'none' | 'minutes' | 'hours' | 'days'): Promise<void> {
+    if (progression === 'none') return;
+
+    // Default increments for each progression type
+    const increments: Record<string, Partial<TimeTracker>> = {
+      minutes: { minutes: 15 },  // ~15 minutes for minor actions
+      hours: { hours: 2 },       // ~2 hours for moderate time passage
+      days: { days: 1 },         // 1 day for significant time jumps
+    };
+
+    const increment = increments[progression];
+    if (increment) {
+      await this.addTime(increment);
+    }
+  }
+
+  /**
+   * Restore or clear the story time tracker from a snapshot.
+   * Undefined means "skip", null means "clear".
+   */
+  async restoreTimeTrackerSnapshot(snapshot: TimeTracker | null | undefined): Promise<void> {
+    if (!this.currentStory) throw new Error('No story loaded');
+    if (snapshot === undefined) return;
+
+    if (snapshot === null) {
+      await database.clearTimeTracker(this.currentStory.id);
+      this.currentStory = { ...this.currentStory, timeTracker: null };
+      log('Time tracker cleared from snapshot');
+      return;
+    }
+
+    const normalized = this.normalizeTime(snapshot);
+    await database.saveTimeTracker(this.currentStory.id, normalized);
+    this.currentStory = { ...this.currentStory, timeTracker: normalized };
+    log('Time tracker restored from snapshot:', normalized);
+  }
+
   // Create a manual chapter at a specific entry index
   async createManualChapter(endEntryIndex: number): Promise<void> {
     if (!this.currentStory) throw new Error('No story loaded');
@@ -1379,6 +1548,12 @@ class StoryStore {
     // Get the next chapter number
     const chapterNumber = await this.getNextChapterNumber();
 
+    // Extract time range from entries' metadata
+    const firstEntry = chapterEntries[0];
+    const lastEntry = chapterEntries[chapterEntries.length - 1];
+    const startTime = firstEntry.metadata?.timeStart ?? null;
+    const endTime = lastEntry.metadata?.timeEnd ?? null;
+
     // Create the chapter
     const chapter: Chapter = {
       id: crypto.randomUUID(),
@@ -1389,6 +1564,8 @@ class StoryStore {
       endEntryId: chapterEntries[chapterEntries.length - 1].id,
       entryCount: chapterEntries.length,
       summary: chapterData.summary,
+      startTime,
+      endTime,
       keywords: chapterData.keywords,
       characters: chapterData.characters,
       locations: chapterData.locations,
@@ -1421,6 +1598,7 @@ class StoryStore {
       itemsSnapshot: [...this.items],
       storyBeatsSnapshot: [...this.storyBeats],
       chaptersSnapshot: [...this.chapters],
+      timeTrackerSnapshot: this.currentStory.timeTracker ? { ...this.currentStory.timeTracker } : null,
       createdAt: Date.now(),
     };
 
@@ -1455,6 +1633,9 @@ class StoryStore {
     // Sort chapters by number to ensure correct ordering
     this.chapters = [...checkpoint.chaptersSnapshot].sort((a, b) => a.number - b.number);
 
+    // Restore time tracker (null clears)
+    await this.restoreTimeTrackerSnapshot(checkpoint.timeTrackerSnapshot);
+
     log('Checkpoint restored');
 
     // Emit event
@@ -1480,6 +1661,7 @@ class StoryStore {
     items: Item[];
     storyBeats: StoryBeat[];
     lorebookEntries: Entry[];
+    timeTracker?: TimeTracker | null;
   }): Promise<void> {
     if (!this.currentStory) throw new Error('No story loaded');
 
@@ -1506,6 +1688,9 @@ class StoryStore {
     this.items = [...backup.items];
     this.storyBeats = [...backup.storyBeats];
     this.lorebookEntries = [...backup.lorebookEntries];
+
+    // Restore time tracker if provided (null clears)
+    await this.restoreTimeTrackerSnapshot(backup.timeTracker);
 
     log('Retry backup restored', {
       entries: this.entries.length,
@@ -1565,6 +1750,7 @@ class StoryStore {
       memoryConfig: DEFAULT_MEMORY_CONFIG,
       retryState: null,
       styleReviewState: null,
+      timeTracker: null,
     });
 
     this.allStories = [storyData, ...this.allStories];
@@ -1638,6 +1824,7 @@ class StoryStore {
     // Add opening scene as first narration entry
     if (data.openingScene) {
       const tokenCount = countTokens(data.openingScene);
+      const baseTime = storyData.timeTracker ?? { years: 0, days: 0, hours: 0, minutes: 0 };
       await database.addStoryEntry({
         id: crypto.randomUUID(),
         storyId,
@@ -1645,7 +1832,7 @@ class StoryStore {
         content: data.openingScene,
         parentId: null,
         position: 0,
-        metadata: { source: 'wizard', tokenCount },
+        metadata: { source: 'wizard', tokenCount, timeStart: { ...baseTime }, timeEnd: { ...baseTime } },
       });
       log('Added opening scene');
     }

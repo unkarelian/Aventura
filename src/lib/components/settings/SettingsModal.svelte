@@ -1698,6 +1698,29 @@
                     </div>
                   </div>
 
+                  <!-- Chat History Truncation -->
+                  <div class="mb-3">
+                    <label class="mb-1 block text-xs font-medium text-surface-400">
+                      Chat History Truncation: {settings.systemServicesSettings.classifier.chatHistoryTruncation === 0 ? 'None' : `${settings.systemServicesSettings.classifier.chatHistoryTruncation} words`}
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="500"
+                      step="25"
+                      bind:value={settings.systemServicesSettings.classifier.chatHistoryTruncation}
+                      onchange={() => settings.saveSystemServicesSettings()}
+                      class="w-full h-2"
+                    />
+                    <div class="flex justify-between text-xs text-surface-500">
+                      <span>None</span>
+                      <span>500 words</span>
+                    </div>
+                    <p class="text-xs text-surface-500 mt-1">
+                      Max words per message in chat history sent to classifier. 0 = no truncation.
+                    </p>
+                  </div>
+
                   <!-- Provider Only -->
                   <div class="mb-3" class:opacity-50={settings.advancedRequestSettings.manualMode}>
                     <ProviderOnlySelector
