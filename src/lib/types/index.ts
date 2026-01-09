@@ -456,7 +456,7 @@ export interface APISettings {
 
 export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high';
 
-export type ThemeId = 'dark' | 'light' | 'retro-console';
+export type ThemeId = 'dark' | 'light' | 'light-solarized' | 'retro-console';
 
 export interface UISettings {
   theme: ThemeId;

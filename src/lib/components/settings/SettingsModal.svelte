@@ -845,12 +845,21 @@
               onchange={(e) => settings.setTheme(e.currentTarget.value as ThemeId)}
             >
               <option value="dark">Dark</option>
-              <option value="light">Light</option>
+              <option value="light">Light (Paper)</option>
+              <option value="light-solarized">Light (Solarized)</option>
               <option value="retro-console">Retro Console</option>
             </select>
             {#if settings.uiSettings.theme === 'retro-console'}
               <p class="mt-1 text-xs text-surface-400">
                 CRT aesthetic inspired by PS2-era games and Serial Experiments Lain
+              </p>
+            {:else if settings.uiSettings.theme === 'light'}
+              <p class="mt-1 text-xs text-surface-400">
+                Clean paper-like warm tones with amber accents
+              </p>
+            {:else if settings.uiSettings.theme === 'light-solarized'}
+              <p class="mt-1 text-xs text-surface-400">
+                Classic Solarized color scheme with cream backgrounds
               </p>
             {/if}
           </div>
