@@ -25,7 +25,6 @@
   import ProviderOnlySelector from './ProviderOnlySelector.svelte';
   import FontSelector from './FontSelector.svelte';
   import type { APIProfile } from '$lib/types';
-  import { swipe } from '$lib/utils/swipe';
   import { updaterService, type UpdateInfo, type UpdateProgress } from '$lib/services/updater';
 
   let activeTab = $state<'api' | 'generation' | 'ui' | 'prompts' | 'advanced'>('api');
@@ -614,22 +613,13 @@
     return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
   }
 
-  // Swipe down to dismiss modal on mobile
-  function handleSwipeDown() {
-    safeClose();
-  }
 </script>
 
 <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60" onclick={() => safeClose()}>
   <div
     class="card w-full sm:max-w-2xl max-h-[95vh] sm:max-h-[80vh] overflow-hidden rounded-b-none sm:rounded-b-xl flex flex-col"
     onclick={(e) => e.stopPropagation()}
-    use:swipe={{ onSwipeDown: handleSwipeDown, threshold: 50 }}
   >
-    <!-- Mobile swipe handle indicator -->
-    <div class="sm:hidden flex justify-center pt-2 pb-1">
-      <div class="w-10 h-1 rounded-full bg-surface-600"></div>
-    </div>
 
     <!-- Header -->
     <div class="flex items-center justify-between border-b border-surface-700 pb-3 sm:pb-4 pt-0 sm:pt-0 flex-shrink-0">

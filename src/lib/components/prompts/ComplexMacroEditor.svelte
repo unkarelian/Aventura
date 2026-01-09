@@ -46,7 +46,7 @@
   });
 
   // Find the current variant content
-  let currentVariantContent = $derived(() => {
+  let currentVariantContent = $derived.by(() => {
     // Check edited variants first
     const edited = findVariant(editedVariants, currentKey);
     if (edited) return edited.content;
@@ -63,13 +63,13 @@
   });
 
   // Get the default content for this variant
-  let defaultVariantContent = $derived(() => {
+  let defaultVariantContent = $derived.by(() => {
     const builtin = findVariant(macro.variants, currentKey);
     return builtin?.content ?? '';
   });
 
   // Check if current variant is modified
-  let isCurrentModified = $derived(() => {
+  let isCurrentModified = $derived.by(() => {
     const edited = findVariant(editedVariants, currentKey);
     return edited !== undefined;
   });
@@ -306,13 +306,13 @@
           <div class="flex items-center gap-2">
             <span class="text-sm text-surface-400">Editing variant:</span>
             <code class="text-xs px-2 py-0.5 rounded bg-surface-800 text-surface-300">
-              {macro.variesBy.mode ? selectedMode : ''}
+              {macro.variesBy.mode ? modeLabels[selectedMode] : ''}
               {macro.variesBy.mode && macro.variesBy.pov ? ' / ' : ''}
               {macro.variesBy.pov ? povLabels[selectedPov] : ''}
               {(macro.variesBy.mode || macro.variesBy.pov) && macro.variesBy.tense ? ' / ' : ''}
               {macro.variesBy.tense ? tenseLabels[selectedTense] : ''}
             </code>
-            {#if isCurrentModified()}
+            {#if isCurrentModified}
               <span class="text-xs px-1.5 py-0.5 rounded bg-amber-900/30 text-amber-400 border border-amber-700/30">
                 Modified
               </span>
