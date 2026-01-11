@@ -12,13 +12,18 @@
     type GeneratedOpening,
     type Tense,
   } from '$lib/services/ai/scenario';
-  import {
+import {
     parseSillyTavernLorebook,
     classifyEntriesWithLLM,
     getImportSummary,
     type ImportedEntry,
     type LorebookImportResult,
   } from '$lib/services/lorebookImporter';
+  import {
+    convertCardToScenario,
+    readCharacterCardFile,
+    type CardImportResult,
+  } from '$lib/services/characterCardImporter';
   import type { StoryMode, POV, EntryType } from '$lib/types';
   import {
     X,
@@ -98,7 +103,7 @@
   let supportingCharacterTraits = $state('');
   let isElaboratingSupportingCharacter = $state(false);
 
-  // Step 2: Import Lorebook (optional - moved to early position)
+// Step 2: Import Lorebook (optional - moved to early position)
   let importedLorebook = $state<LorebookImportResult | null>(null);
   let importedEntries = $state<ImportedEntry[]>([]);
   let isImporting = $state(false);
@@ -106,6 +111,17 @@
   let classificationProgress = $state({ current: 0, total: 0 });
   let importError = $state<string | null>(null);
   let importFileInput: HTMLInputElement | null = null;
+
+  // Step 4: Character Card Import (optional)
+  let isImportingCard = $state(false);
+  let cardImportError = $state<string | null>(null);
+  let importedCardNpcs = $state<GeneratedCharacter[]>([]);
+  let cardImportFileInput: HTMLInputElement | null = null;
+  // Card-imported opening scene data (used in step 7)
+  let cardImportedTitle = $state<string | null>(null);
+  let cardImportedFirstMessage = $state<string | null>(null);
+  let cardImportedAlternateGreetings = $state<string[]>([]);
+  let selectedGreetingIndex = $state<number>(0); // 0 = first_mes, 1+ = alternate greetings
 
   // Step 6: Writing Style
   let selectedPOV = $state<POV>('first');
@@ -540,11 +556,20 @@
       return;
     }
 
+    // Get protagonist name for {{user}} replacement
+    const protagonistName = protagonist?.name || 'the protagonist';
+
+    // Replace {{user}} placeholders in the opening scene
+    const processedOpening = {
+      ...generatedOpening,
+      scene: generatedOpening.scene.replace(/\{\{user\}\}/gi, protagonistName),
+    };
+
     const wizardData: WizardData = {
       mode: selectedMode,
       genre: selectedGenre,
       customGenre: customGenre || undefined,
-      settingSeed,
+      settingSeed: settingSeed.replace(/\{\{user\}\}/gi, protagonistName),
       expandedSetting: expandedSetting || undefined,
       protagonist: protagonist || undefined,
       characters: supportingCharacters.length > 0 ? supportingCharacters : undefined,
@@ -558,7 +583,7 @@
     };
 
     // Prepare story data
-    const storyData = scenarioService.prepareStoryData(wizardData, generatedOpening);
+    const storyData = scenarioService.prepareStoryData(wizardData, processedOpening);
 
     // Create the story using the store, including any imported entries
     const newStory = await story.createStoryFromWizard({
@@ -649,7 +674,7 @@
     }
   }
 
-  function clearImport() {
+function clearImport() {
     importedLorebook = null;
     importedEntries = [];
     importError = null;
@@ -657,6 +682,82 @@
     classificationProgress = { current: 0, total: 0 };
     if (importFileInput) {
       importFileInput.value = '';
+    }
+  }
+
+  // Character Card Import handler
+  async function handleCardImport(event: Event) {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    cardImportError = null;
+    isImportingCard = true;
+
+    try {
+      // Read the file (handles both JSON and PNG formats)
+      const content = await readCharacterCardFile(file);
+      const result = await convertCardToScenario(
+        content,
+        selectedMode,
+        selectedGenre
+      );
+
+      if (!result.success && result.errors.length > 0) {
+        // Show error but still use fallback if available
+        cardImportError = result.errors.join('; ');
+      }
+
+      if (result.settingSeed) {
+        // Set the setting seed from the card
+        settingSeed = result.settingSeed;
+        // Clear any previous expanded setting since we have new content
+        expandedSetting = null;
+      }
+
+      if (result.npcs && result.npcs.length > 0) {
+        // Add imported NPCs to supporting characters
+        supportingCharacters = [...supportingCharacters, ...result.npcs];
+        // Also store reference for display purposes
+        importedCardNpcs = result.npcs;
+      }
+
+      // Store card-imported opening scene data for step 7
+      if (result.storyTitle) {
+        cardImportedTitle = result.storyTitle;
+        storyTitle = result.storyTitle; // Pre-fill the story title
+      }
+      if (result.firstMessage) {
+        cardImportedFirstMessage = result.firstMessage;
+        cardImportedAlternateGreetings = result.alternateGreetings || [];
+        selectedGreetingIndex = 0;
+      }
+
+      // Reset the file input
+      if (cardImportFileInput) {
+        cardImportFileInput.value = '';
+      }
+    } catch (err) {
+      cardImportError = err instanceof Error ? err.message : 'Failed to import character card';
+    } finally {
+      isImportingCard = false;
+    }
+  }
+
+  function clearCardImport() {
+    // Remove card-imported NPCs from supporting characters
+    if (importedCardNpcs.length > 0) {
+      const importedNames = new Set(importedCardNpcs.map(n => n.name));
+      supportingCharacters = supportingCharacters.filter(c => !importedNames.has(c.name));
+    }
+    importedCardNpcs = [];
+    cardImportError = null;
+    cardImportedTitle = null;
+    cardImportedFirstMessage = null;
+    cardImportedAlternateGreetings = [];
+    selectedGreetingIndex = 0;
+    if (cardImportFileInput) {
+      cardImportFileInput.value = '';
     }
   }
 
@@ -671,6 +772,18 @@
       case 'event': return 'text-red-400';
       default: return 'text-surface-400';
     }
+  }
+
+  // Check if setting seed contains {{user}} placeholder
+  const hasUserPlaceholder = $derived(settingSeed.includes('{{user}}'));
+
+  // Helper to style {{user}} placeholders in text for display
+  // Returns HTML with {{user}} styled as inline tags
+  function styleUserPlaceholders(text: string): string {
+    return text.replace(
+      /\{\{user\}\}/gi,
+      '<span class="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded bg-primary-600/30 text-primary-300 text-xs font-mono border border-primary-500/40">{{user}}</span>'
+    );
   }
 
   // Derived import summary
@@ -953,12 +1066,66 @@
           {/if}
         </div>
 
-      {:else if currentStep === 4}
+{:else if currentStep === 4}
         <!-- Step 4: Setting -->
         <div class="space-y-4">
           <p class="text-surface-400">
             Describe your world in a few sentences. The AI will expand it into a rich setting.
           </p>
+
+          <!-- Character Card Import -->
+          <div class="card bg-surface-800/50 p-3 space-y-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <FileJson class="h-4 w-4 text-surface-400" />
+                <span class="text-sm font-medium text-surface-300">Import Character Card</span>
+                <span class="text-xs text-surface-500">(Optional)</span>
+              </div>
+              {#if importedCardNpcs.length > 0}
+                <button
+                  class="text-xs text-surface-400 hover:text-surface-200"
+                  onclick={clearCardImport}
+                >
+                  Clear
+                </button>
+              {/if}
+            </div>
+            <p class="text-xs text-surface-500">
+              Import a SillyTavern character card (.json or .png) to generate a setting with the character as an NPC.
+            </p>
+            <div class="flex items-center gap-2">
+              <input
+                type="file"
+                accept=".json,.png,application/json,image/png"
+                class="hidden"
+                bind:this={cardImportFileInput}
+                onchange={handleCardImport}
+              />
+              <button
+                class="btn btn-secondary btn-sm flex items-center gap-2"
+                onclick={() => cardImportFileInput?.click()}
+                disabled={isImportingCard}
+              >
+                {#if isImportingCard}
+                  <Loader2 class="h-3 w-3 animate-spin" />
+                  Converting...
+                {:else}
+                  <Upload class="h-3 w-3" />
+                  Select Card
+                {/if}
+              </button>
+              {#if importedCardNpcs.length > 0}
+                <span class="text-xs text-green-400 flex items-center gap-1">
+                  <Check class="h-3 w-3" />
+                  Imported: {importedCardNpcs.map(n => n.name).join(', ')}
+                </span>
+              {/if}
+            </div>
+            {#if cardImportError}
+              <p class="text-xs text-red-400">{cardImportError}</p>
+            {/if}
+          </div>
+
           <div>
             <label class="mb-2 block text-sm font-medium text-surface-300">
               Setting Seed
@@ -969,6 +1136,12 @@
               class="input min-h-[100px] resize-none"
               rows="4"
             ></textarea>
+            {#if hasUserPlaceholder}
+              <p class="text-xs text-surface-500 mt-1 flex items-center gap-1">
+                <span class="inline-flex items-center px-1 py-0.5 rounded bg-primary-600/30 text-primary-300 text-[10px] font-mono border border-primary-500/40">{'{{user}}'}</span>
+                will be replaced with your character's name from Step 5
+              </p>
+            {/if}
           </div>
 
           {#if settingSeed.trim().length > 0 && !expandedSetting}
@@ -1504,6 +1677,84 @@
             />
           </div>
 
+          <!-- Imported Opening Scene from Character Card -->
+          {#if cardImportedFirstMessage}
+            <div class="card bg-surface-800/50 p-4 space-y-3">
+              <div class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <FileJson class="h-4 w-4 text-accent-400" />
+                  <h4 class="font-medium text-surface-200">Imported Opening Scene</h4>
+                </div>
+                <button
+                  class="text-xs text-surface-400 hover:text-surface-200"
+                  onclick={() => {
+                    cardImportedFirstMessage = null;
+                    cardImportedAlternateGreetings = [];
+                    selectedGreetingIndex = 0;
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+
+              <!-- Greeting Selection (if alternate greetings exist) -->
+              {#if cardImportedAlternateGreetings.length > 0}
+                <div>
+                  <label class="mb-2 block text-xs font-medium text-surface-400">Select Opening</label>
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      class="px-3 py-1.5 rounded text-xs transition-colors {selectedGreetingIndex === 0 ? 'bg-accent-600 text-white' : 'bg-surface-700 text-surface-300 hover:bg-surface-600'}"
+                      onclick={() => selectedGreetingIndex = 0}
+                    >
+                      Default
+                    </button>
+                    {#each cardImportedAlternateGreetings as _, i}
+                      <button
+                        class="px-3 py-1.5 rounded text-xs transition-colors {selectedGreetingIndex === i + 1 ? 'bg-accent-600 text-white' : 'bg-surface-700 text-surface-300 hover:bg-surface-600'}"
+                        onclick={() => selectedGreetingIndex = i + 1}
+                      >
+                        Alt {i + 1}
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Preview of selected opening -->
+              <div class="card bg-surface-900 p-3 max-h-48 overflow-y-auto">
+                <p class="text-sm text-surface-300 whitespace-pre-wrap">
+                  {@html styleUserPlaceholders(selectedGreetingIndex === 0 ? (cardImportedFirstMessage || '') : (cardImportedAlternateGreetings[selectedGreetingIndex - 1] || ''))}
+                </p>
+              </div>
+              {#if (selectedGreetingIndex === 0 ? cardImportedFirstMessage : cardImportedAlternateGreetings[selectedGreetingIndex - 1])?.includes('{{user}}')}
+                <p class="text-xs text-surface-500 flex items-center gap-1">
+                  <span class="inline-flex items-center px-1 py-0.5 rounded bg-primary-600/30 text-primary-300 text-[10px] font-mono border border-primary-500/40">{'{{user}}'}</span>
+                  will be replaced with your character's name
+                </p>
+              {/if}
+
+              <button
+                class="btn btn-primary btn-sm flex items-center gap-2"
+                onclick={() => {
+                  const selectedScene = selectedGreetingIndex === 0
+                    ? cardImportedFirstMessage
+                    : cardImportedAlternateGreetings[selectedGreetingIndex - 1];
+                  generatedOpening = {
+                    title: storyTitle,
+                    scene: selectedScene || '',
+                    initialLocation: {
+                      name: expandedSetting?.keyLocations?.[0]?.name || 'Starting Location',
+                      description: expandedSetting?.keyLocations?.[0]?.description || 'The scene begins here.'
+                    }
+                  };
+                }}
+              >
+                <Check class="h-3 w-3" />
+                Use This Opening
+              </button>
+            </div>
+          {/if}
+
           <!-- Opening Scene Guidance (Creative Writing Mode Only) -->
           {#if selectedMode === 'creative-writing'}
             <div class="card bg-surface-900 p-4 space-y-3">
@@ -1539,8 +1790,10 @@
                   {generatedOpening ? 'Regenerate Opening' : 'Generate Opening Scene'}
                 {/if}
               </button>
-              {#if !generatedOpening && !isGeneratingOpening}
+              {#if !generatedOpening && !isGeneratingOpening && !cardImportedFirstMessage}
                 <span class="text-sm text-amber-400">Required to begin story</span>
+              {:else if !generatedOpening && !isGeneratingOpening && cardImportedFirstMessage}
+                <span class="text-sm text-surface-400">Or use the imported opening above</span>
               {/if}
             </div>
           {:else}

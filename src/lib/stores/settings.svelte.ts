@@ -912,6 +912,42 @@ export function getDefaultImageGenerationSettingsForProvider(provider: ProviderP
   };
 }
 
+// Character Card Import settings (SillyTavern card conversion)
+export interface CharacterCardImportSettings {
+  profileId: string | null;  // API profile to use (null = use main narrative profile)
+  model: string;
+  temperature: number;
+  maxTokens: number;
+  reasoningEffort: ReasoningEffort;
+  providerOnly: string[];
+  manualBody: string;
+}
+
+export function getDefaultCharacterCardImportSettings(): CharacterCardImportSettings {
+  return {
+    profileId: null,  // null = use main narrative profile
+    model: 'deepseek/deepseek-v3.2',
+    temperature: 0.3,
+    maxTokens: 16384,
+    reasoningEffort: 'off',
+    providerOnly: [],
+    manualBody: '',
+  };
+}
+
+export function getDefaultCharacterCardImportSettingsForProvider(provider: ProviderPreset): CharacterCardImportSettings {
+  // Same model for both providers - deepseek works well for this task
+  return {
+    profileId: null,
+    model: 'deepseek/deepseek-v3.2',
+    temperature: 0.3,
+    maxTokens: 16384,
+    reasoningEffort: 'off',
+    providerOnly: [],
+    manualBody: '',
+  };
+}
+
 // Combined system services settings
 export interface SystemServicesSettings {
   classifier: ClassifierSettings;
@@ -925,6 +961,7 @@ export interface SystemServicesSettings {
   timelineFill: TimelineFillSettings;
   entryRetrieval: EntryRetrievalSettings;
   imageGeneration: ImageGenerationServiceSettings;
+  characterCardImport: CharacterCardImportSettings;
 }
 
 export function getDefaultSystemServicesSettings(): SystemServicesSettings {
@@ -940,6 +977,7 @@ export function getDefaultSystemServicesSettings(): SystemServicesSettings {
     timelineFill: getDefaultTimelineFillSettings(),
     entryRetrieval: getDefaultEntryRetrievalSettings(),
     imageGeneration: getDefaultImageGenerationSettings(),
+    characterCardImport: getDefaultCharacterCardImportSettings(),
   };
 }
 
@@ -956,6 +994,7 @@ export function getDefaultSystemServicesSettingsForProvider(provider: ProviderPr
     timelineFill: getDefaultTimelineFillSettingsForProvider(provider),
     entryRetrieval: getDefaultEntryRetrievalSettingsForProvider(provider),
     imageGeneration: getDefaultImageGenerationSettingsForProvider(provider),
+    characterCardImport: getDefaultCharacterCardImportSettingsForProvider(provider),
   };
 }
 
@@ -1212,6 +1251,7 @@ class SettingsStore {
             timelineFill: { ...defaults.timelineFill, ...loaded.timelineFill },
             entryRetrieval: { ...defaults.entryRetrieval, ...loaded.entryRetrieval },
             imageGeneration: { ...defaults.imageGeneration, ...loaded.imageGeneration },
+            characterCardImport: { ...defaults.characterCardImport, ...loaded.characterCardImport },
           };
 
           const isMissingProfileId = (profileId: string | null | undefined): boolean => {
@@ -1987,6 +2027,11 @@ class SettingsStore {
 
   async resetImageGenerationSettings() {
     this.systemServicesSettings.imageGeneration = getDefaultImageGenerationSettingsForProvider(this.getEffectiveProvider());
+    await this.saveSystemServicesSettings();
+  }
+
+  async resetCharacterCardImportSettings() {
+    this.systemServicesSettings.characterCardImport = getDefaultCharacterCardImportSettingsForProvider(this.getEffectiveProvider());
     await this.saveSystemServicesSettings();
   }
 

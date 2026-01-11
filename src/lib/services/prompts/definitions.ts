@@ -445,6 +445,9 @@ export const CONTEXT_PLACEHOLDERS: ContextPlaceholder[] = [
   { id: 'entries-count', name: 'Entries Count', token: 'entriesCount', category: 'memory', description: 'Number of lorebook entries' },
   { id: 'recent-story-section', name: 'Recent Story Section', token: 'recentStorySection', category: 'memory', description: 'Recent story section for lore management' },
 
+  // Character card import
+  { id: 'card-content', name: 'Card Content', token: 'cardContent', category: 'wizard', description: 'Raw content from the SillyTavern character card' },
+
   // Style reviewer
   { id: 'passage-count', name: 'Passage Count', token: 'passageCount', category: 'other', description: 'Number of passages being analyzed' },
   { id: 'passages', name: 'Passages', token: 'passages', category: 'other', description: 'The narrative passages to analyze for style issues' },
@@ -1206,7 +1209,7 @@ Guidelines:
 4. Be selective - only gather truly relevant information
 5. When you have enough context, call finish_retrieval with a synthesized summary
 
-The context you provide will be injected into the narrator's prompt to help maintain story consistency.`,
+  The context you provide will be injected into the narrator's prompt to help maintain story consistency.`,
   userContent: `# Current Situation
 
 USER INPUT:
@@ -1222,6 +1225,94 @@ RECENT SCENE:
 {{entryList}}
 
 Please gather relevant context from past chapters that will help respond to this situation. Focus on information that is actually needed - often, no retrieval is necessary for simple actions.`,
+};
+
+const characterCardImportPromptTemplate: PromptTemplate = {
+  id: 'character-card-import',
+  name: 'Character Card Import',
+  category: 'wizard',
+  description: 'Cleans SillyTavern character cards and converts them to Aventura scenario settings',
+  content: `You are cleaning a SillyTavern character card for use as a scenario setting in interactive fiction.
+
+## Your Task
+1. IDENTIFY who "{{char}}" refers to based on the content (the actual character name - NOT the card title)
+2. IDENTIFY ALL NPCs/characters mentioned in the card content
+3. REPLACE all instances of "{{char}}" with the actual character name in your output
+4. KEEP all instances of "{{user}}" as-is - this placeholder will be replaced with the player's character name later
+5. REMOVE specific meta-content patterns (see below)
+6. PRESERVE the original text as much as possible - do NOT summarize or condense
+
+The "{{user}}" refers to the player's character (protagonist). Characters identified from the card will become NPCs.
+
+## REMOVE THESE PATTERNS (delete entirely):
+
+### Roleplay Instructions (DELETE):
+- "You are {{char}}", "You will portray...", "Play as..."
+- "Do not speak for {{user}}", "Never speak for {{user}}"
+- "Stay in character", "Never break character"
+- "Always respond as...", "You must..."
+- Any instruction telling the AI HOW to behave
+
+### Meta-Content (DELETE):
+- HTML comments: <!-- ... -->
+- OOC markers: "(OOC:", "[Author's note:", "[A/N:", etc.
+- System prompts, jailbreaks, NSFW toggles
+- Format instructions: "Use asterisks for actions", "Write in third person", "Use markdown"
+- Section headers like "=== Narration ===" or "=== Character Embodiment ==="
+- Guidelines about writing style, vocabulary, pacing
+
+### Example Dialogue Format (EXTRACT LORE ONLY):
+- Remove the dialogue format itself
+- Keep any world-building or lore mentioned within dialogues
+
+## CONVERT TO NATURAL PROSE (don't delete):
+
+### PList Syntax → Natural Prose:
+- [Character: trait1, trait2; clothes: x] → "CharacterName is trait1 and trait2. She wears x."
+- Keep ALL the information, just convert the bracket format to sentences
+
+## PRESERVE VERBATIM:
+- World descriptions, locations, atmosphere
+- Character appearance (physical details, clothing, etc.)
+- Character personality and behavior patterns
+- Backstory and history
+- Relationship dynamics
+- Scenario/situation setup
+- Any lore, world rules, or setting details
+- All {{user}} placeholders (keep them exactly as {{user}})
+
+## OUTPUT FORMAT
+Respond with valid JSON only (no markdown code blocks):
+{
+  "primaryCharacterName": "The ACTUAL name of the main character that {{char}} refers to",
+  "settingSeed": "The FULL cleaned text with {{char}} replaced by the actual name, but {{user}} kept as-is. This should be LONG - include ALL world-building, character details, and scenario setup. Only meta-instructions should be removed.",
+  "npcs": [
+    {
+      "name": "Character's actual name",
+      "role": "their role (e.g., 'ally', 'mentor', 'antagonist', 'love interest', 'guide', 'friend')",
+      "description": "1-2 sentences: who they are and key appearance details",
+      "personality": "key personality traits as comma-separated list",
+      "relationship": "their relationship to {{user}}"
+    }
+  ]
+}
+
+Note: Include ALL significant characters mentioned in the card as NPCs. The primary character ({{char}}) should be the first NPC in the array.`,
+  userContent: `Clean this character card for use as a {{genre}} scenario setting.
+
+The {{user}} will be the protagonist (their name will be filled in later) interacting with the NPCs in an interactive story.
+
+IMPORTANT: 
+- Identify who "{{char}}" refers to based on the content (NOT the card title "{{title}}")
+- Replace all {{char}} with the actual character name
+- KEEP all {{user}} placeholders as-is (they will be replaced with the player's character name later)
+- Preserve the original text - only REMOVE meta-instructions and roleplay guidelines
+- Do NOT summarize or condense - the output should be nearly as long as the input
+
+## CARD CONTENT
+{{cardContent}}
+
+Clean the above content. Identify all NPCs, replace {{char}} with the actual name, keep {{user}} as-is, and remove meta-content. Output valid JSON only.`,
 };
 
 // ============================================================================
@@ -1635,6 +1726,7 @@ export const PROMPT_TEMPLATES: PromptTemplate[] = [
   lorebookClassifierPromptTemplate,
   loreManagementPromptTemplate,
   agenticRetrievalPromptTemplate,
+  characterCardImportPromptTemplate,
   imagePromptAnalysisTemplate,
   // Wizard prompts
   settingExpansionPromptTemplate,

@@ -40,6 +40,7 @@
   let showLoreManagementSection = $state(false);
   let showTimelineFillSection = $state(false);
   let showSceneAnalysisSection = $state(false);
+  let showCharacterCardImportSection = $state(false);
   let editingLorebookClassifier = $state(false);
   let editingProcess = $state<keyof AdvancedWizardSettings | null>(null);
 
@@ -1940,6 +1941,192 @@
                       <span class="text-surface-500">Temp:</span> {(settings.systemServicesSettings.lorebookClassifier?.temperature ?? 0.1).toFixed(1)}
                       <span class="mx-2">•</span>
                       <span class="text-surface-500">Batch:</span> {settings.systemServicesSettings.lorebookClassifier?.batchSize ?? 50}
+                    </div>
+                  {/if}
+                </div>
+
+                <!-- Character Card Import Subsection -->
+                <div class="card bg-surface-900 p-3">
+                  <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                      <FolderOpen class="h-4 w-4 text-orange-400" />
+                      <span class="text-sm font-medium text-surface-200">Character Card Import</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <button
+                        class="text-xs text-surface-400 hover:text-surface-200"
+                        onclick={() => settings.resetCharacterCardImportSettings()}
+                        title="Reset to default"
+                      >
+                        <RotateCcw class="h-3 w-3" />
+                      </button>
+                      <button
+                        class="text-xs text-accent-400 hover:text-accent-300"
+                        onclick={() => showCharacterCardImportSection = !showCharacterCardImportSection}
+                      >
+                        {showCharacterCardImportSection ? 'Close' : 'Edit'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {#if showCharacterCardImportSection}
+                    <div class="space-y-3 mt-3 pt-3 border-t border-surface-700">
+                      <!-- Profile and Model Selector -->
+                      <ModelSelector
+                        profileId={settings.systemServicesSettings.characterCardImport?.profileId ?? settings.apiSettings.mainNarrativeProfileId}
+                        model={settings.systemServicesSettings.characterCardImport?.model ?? 'deepseek/deepseek-v3.2'}
+                        onProfileChange={(id) => {
+                          settings.systemServicesSettings.characterCardImport.profileId = id;
+                          settings.saveSystemServicesSettings();
+                        }}
+                        onModelChange={(m) => {
+                          settings.systemServicesSettings.characterCardImport.model = m;
+                          settings.saveSystemServicesSettings();
+                        }}
+                        onManageProfiles={() => { showProfileModal = true; editingProfile = null; }}
+                      />
+
+                      <!-- Temperature -->
+                      <div class:opacity-50={settings.advancedRequestSettings.manualMode}>
+                        <label class="mb-1 block text-xs font-medium text-surface-400">
+                          Temperature: {(settings.systemServicesSettings.characterCardImport?.temperature ?? 0.3).toFixed(2)}
+                        </label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="1"
+                          step="0.05"
+                          value={settings.systemServicesSettings.characterCardImport?.temperature ?? 0.3}
+                          oninput={(e) => {
+                            settings.systemServicesSettings.characterCardImport.temperature = parseFloat(e.currentTarget.value);
+                            settings.saveSystemServicesSettings();
+                          }}
+                          disabled={settings.advancedRequestSettings.manualMode}
+                          class="w-full h-2"
+                        />
+                      </div>
+
+                      <!-- Max Tokens -->
+                      <div class:opacity-50={settings.advancedRequestSettings.manualMode}>
+                        <label class="mb-1 block text-xs font-medium text-surface-400">
+                          Max Tokens: {settings.systemServicesSettings.characterCardImport?.maxTokens ?? 16384}
+                        </label>
+                        <input
+                          type="range"
+                          min="2048"
+                          max="32768"
+                          step="1024"
+                          value={settings.systemServicesSettings.characterCardImport?.maxTokens ?? 16384}
+                          oninput={(e) => {
+                            settings.systemServicesSettings.characterCardImport.maxTokens = parseInt(e.currentTarget.value);
+                            settings.saveSystemServicesSettings();
+                          }}
+                          disabled={settings.advancedRequestSettings.manualMode}
+                          class="w-full h-2"
+                        />
+                        <div class="flex justify-between text-xs text-surface-500">
+                          <span>2K</span>
+                          <span>32K</span>
+                        </div>
+                      </div>
+
+                      <!-- Thinking -->
+                      <div class:opacity-50={settings.advancedRequestSettings.manualMode}>
+                        <label class="mb-1 block text-xs font-medium text-surface-400">
+                          Thinking: {reasoningLabels[settings.systemServicesSettings.characterCardImport.reasoningEffort]}
+                        </label>
+                        <input
+                          type="range"
+                          min="0"
+                          max="3"
+                          step="1"
+                          value={getReasoningIndex(settings.systemServicesSettings.characterCardImport.reasoningEffort)}
+                          onchange={(e) => {
+                            settings.systemServicesSettings.characterCardImport.reasoningEffort = getReasoningValue(parseInt(e.currentTarget.value));
+                            settings.saveSystemServicesSettings();
+                          }}
+                          disabled={settings.advancedRequestSettings.manualMode}
+                          class="w-full h-2"
+                        />
+                        <div class="flex justify-between text-xs text-surface-500">
+                          <span>Off</span>
+                          <span>Low</span>
+                          <span>Medium</span>
+                          <span>High</span>
+                        </div>
+                      </div>
+
+                      <!-- Provider Only -->
+                      <div class:opacity-50={settings.advancedRequestSettings.manualMode}>
+                        <ProviderOnlySelector
+                          providers={providerOptions}
+                          selected={settings.systemServicesSettings.characterCardImport.providerOnly}
+                          disabled={settings.advancedRequestSettings.manualMode}
+                          onChange={(next) => {
+                            settings.systemServicesSettings.characterCardImport.providerOnly = next;
+                            settings.saveSystemServicesSettings();
+                          }}
+                        />
+                      </div>
+
+                      {#if settings.advancedRequestSettings.manualMode}
+                        <div class="border-t border-surface-700 pt-3">
+                          <div class="mb-1 flex items-center justify-between">
+                            <label class="text-xs font-medium text-surface-400">Manual Request Body (JSON)</label>
+                            <button
+                              class="text-xs text-accent-400 hover:text-accent-300"
+                              onclick={() => openManualBodyEditor('Character Card Import', settings.systemServicesSettings.characterCardImport.manualBody, (next) => {
+                                settings.systemServicesSettings.characterCardImport.manualBody = next;
+                                settings.saveSystemServicesSettings();
+                              })}
+                            >
+                              Pop out
+                            </button>
+                          </div>
+                          <textarea
+                            value={settings.systemServicesSettings.characterCardImport.manualBody}
+                            oninput={(e) => {
+                              settings.systemServicesSettings.characterCardImport.manualBody = e.currentTarget.value;
+                            }}
+                            onblur={() => settings.saveSystemServicesSettings()}
+                            class="input text-xs min-h-[140px] resize-y font-mono w-full"
+                            rows="6"
+                          ></textarea>
+                          <p class="text-xs text-surface-500 mt-1">
+                            Overrides request parameters; messages and tools are managed by Aventura.
+                          </p>
+                        </div>
+                      {/if}
+
+                      <!-- System Prompt -->
+                      <div class="rounded-lg border border-surface-700 bg-surface-900/40 p-3">
+                        <div class="flex items-center justify-between gap-4">
+                          <div class="flex-1">
+                            <label class="text-xs font-medium text-surface-400">System Prompt</label>
+                            <p class="text-xs text-surface-500 mt-0.5">
+                              Configure the cleaning and conversion prompt in the Prompts tab under Wizard Templates.
+                            </p>
+                          </div>
+                          <button
+                            class="btn btn-secondary text-xs shrink-0"
+                            onclick={() => {
+                              activeTab = 'prompts';
+                              promptsCategory = 'wizard';
+                              selectedTemplateId = 'character-card-import';
+                            }}
+                          >
+                            Go to Prompts
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  {:else}
+                    <div class="text-xs text-surface-400">
+                      <span class="text-surface-500">Model:</span> {settings.systemServicesSettings.characterCardImport?.model ?? 'deepseek/deepseek-v3.2'}
+                      <span class="mx-2">•</span>
+                      <span class="text-surface-500">Temp:</span> {(settings.systemServicesSettings.characterCardImport?.temperature ?? 0.3).toFixed(1)}
+                      <span class="mx-2">•</span>
+                      <span class="text-surface-500">Tokens:</span> {settings.systemServicesSettings.characterCardImport?.maxTokens ?? 16384}
                     </div>
                   {/if}
                 </div>
