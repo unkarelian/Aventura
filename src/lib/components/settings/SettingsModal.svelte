@@ -868,19 +868,36 @@
             <label class="mb-2 block text-sm font-medium text-surface-300">
               Max Tokens: {settings.apiSettings.maxTokens}
             </label>
-            <input
-              type="range"
-              min="256"
-              max="8192"
-              step="128"
-              value={settings.apiSettings.maxTokens}
-              oninput={(e) => settings.setMaxTokens(parseInt(e.currentTarget.value))}
-              disabled={settings.advancedRequestSettings.manualMode}
-              class="w-full"
-            />
-            <div class="flex justify-between text-xs text-surface-500">
-              <span>Shorter</span>
-              <span>Longer</span>
+            <div class="space-y-2">
+              <input
+                type="range"
+                min="256"
+                max="1000000"
+                step="1"
+                value={settings.apiSettings.maxTokens}
+                oninput={(e) => settings.setMaxTokens(parseInt(e.currentTarget.value))}
+                disabled={settings.advancedRequestSettings.manualMode}
+                class="w-full"
+              />
+              <input
+                type="number"
+                min="256"
+                max="1000000"
+                value={settings.apiSettings.maxTokens}
+                oninput={(e) => {
+                  const value = parseInt(e.currentTarget.value);
+                  if (!isNaN(value) && value >= 256 && value <= 1000000) {
+                    settings.setMaxTokens(value);
+                  }
+                }}
+                disabled={settings.advancedRequestSettings.manualMode}
+                class="input w-full"
+                placeholder="Enter max tokens (256 - 1,000,000)"
+              />
+            </div>
+            <div class="flex justify-between text-xs text-surface-500 mt-1">
+              <span>256</span>
+              <span>1,000,000</span>
             </div>
           </div>
 
