@@ -1292,7 +1292,8 @@ class StoryStore {
           if (update.changes.newTraits?.length) {
             traits = [...traits, ...update.changes.newTraits];
           }
-          changes.traits = traits;
+          const traitMap = new Map(traits.map(t => [t.toLowerCase(), t]));
+          changes.traits = Array.from(traitMap.values());
         }
         // Handle visual descriptor updates for image generation
         // replaceVisualDescriptors takes priority - it's a complete replacement
