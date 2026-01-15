@@ -975,7 +975,7 @@ export interface TTSServiceSettings {
   voice: string;                  // Voice ID (default: 'alloy')
   speed: number;                  // Speech speed 0.25-4.0 (default: 1.0)
   autoPlay: boolean;              // Auto-play narration TTS (default: false)
-  excludedCharacters: string;     // List of banned characters for TTS (defayult: *, #, _, ~)
+  excludedCharacters: string;     // List of banned characters for TTS (default: *, #, _, ~)
   removeHtmlTags: boolean;        // Removes HTML tags from text (default: false)
   removeAllHtmlContent: boolean;     // Removes content within all HTML tags (default: false)
   htmlTagsToRemoveContent: string; // Specific HTML tags to remove content from (default: span, div)
