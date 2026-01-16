@@ -682,17 +682,21 @@ export const CONTEXT_PLACEHOLDERS: ContextPlaceholder[] = [
   { id: 'seed', name: 'Seed Idea', token: 'seed', category: 'wizard', description: 'The user\'s seed idea for world generation' },
   { id: 'setting-name', name: 'Setting Name', token: 'settingName', category: 'wizard', description: 'Name of the generated setting/world' },
   { id: 'setting-description', name: 'Setting Description', token: 'settingDescription', category: 'wizard', description: 'Description of the setting/world' },
+  { id: 'current-setting', name: 'Current Setting', token: 'currentSetting', category: 'wizard', description: 'Full current setting snapshot (name, description, locations, themes, conflicts)' },
   { id: 'pov-instruction', name: 'POV Instruction', token: 'povInstruction', category: 'wizard', description: 'Instructions about point of view for generation' },
   { id: 'pov-perspective', name: 'POV Perspective', token: 'povPerspective', category: 'wizard', description: 'How to refer to the protagonist based on POV (e.g., "through {{protagonistName}}\'s perspective" or "from the protagonist\'s first-person view")' },
   { id: 'pov-perspective-instructions', name: 'POV Perspective Instructions', token: 'povPerspectiveInstructions', category: 'wizard', description: 'Instructions on pronoun usage based on POV (e.g., "Use \\"I/me/my\\" for first person" or "NEVER use second person")' },
   { id: 'setting-context', name: 'Setting Context', token: 'settingContext', category: 'wizard', description: 'Setting context block for character elaboration' },
   { id: 'tone-instruction', name: 'Tone Instruction', token: 'toneInstruction', category: 'wizard', description: 'Additional tone guidance for character elaboration' },
   { id: 'setting-instruction', name: 'Setting Instruction', token: 'settingInstruction', category: 'wizard', description: 'Additional setting guidance for character elaboration' },
+  { id: 'custom-instruction', name: 'Custom Instruction', token: 'customInstruction', category: 'wizard', description: 'User-provided guidance for elaboration (e.g., "Make them more cynical", "Focus on dark gothic atmosphere")' },
   { id: 'tone', name: 'Tone', token: 'tone', category: 'wizard', description: 'Writing style tone for the opening scene' },
   { id: 'tense-instruction', name: 'Tense Instruction', token: 'tenseInstruction', category: 'wizard', description: 'Tense guidance for the opening scene' },
   { id: 'output-format', name: 'Output Format', token: 'outputFormat', category: 'wizard', description: 'Output format instructions (JSON vs prose)' },
   { id: 'guidance-section', name: 'Opening Guidance', token: 'guidanceSection', category: 'wizard', description: 'Author-provided guidance for the opening scene' },
   { id: 'opening-instruction', name: 'Opening Instruction', token: 'openingInstruction', category: 'wizard', description: 'Additional opening constraints/instructions' },
+  { id: 'current-opening', name: 'Current Opening', token: 'currentOpening', category: 'wizard', description: 'Full current opening snapshot (title, scene, initial location)' },
+  { id: 'current-character', name: 'Current Character', token: 'currentCharacter', category: 'wizard', description: 'Full current character snapshot (name, description, background, traits, appearance)' },
   { id: 'character-name', name: 'Character Name', token: 'characterName', category: 'wizard', description: 'Name of the character being elaborated' },
   { id: 'character-description', name: 'Character Description', token: 'characterDescription', category: 'wizard', description: 'Description of the character' },
   { id: 'character-background', name: 'Character Background', token: 'characterBackground', category: 'wizard', description: 'Background story of the character' },
@@ -1727,13 +1731,47 @@ You MUST respond with valid JSON matching this exact schema:
   "potentialConflicts": ["string array - 3-5 story hooks or conflicts"]
 }
 
-Be creative but grounded. Make the setting feel lived-in and full of story potential.`,
+Be creative but grounded. Make the setting feel lived-in and full of story potential.
+{{customInstruction}}`,
   userContent: `Create a {{genreLabel}} setting based on this seed idea:
 
 "{{seed}}"
 {{lorebookContext}}
 
 Expand this into a rich, detailed world that could sustain an interactive story.`,
+};
+
+const settingRefinementPromptTemplate: PromptTemplate = {
+  id: 'setting-refinement',
+  name: 'Setting Refinement',
+  category: 'wizard',
+  description: 'Refines an existing setting using current details and guidance',
+  content: `You are a world-building expert refining an existing setting for interactive fiction. Improve clarity, depth, and cohesion while preserving established canon.
+
+You MUST respond with valid JSON matching this exact schema:
+{
+  "name": "string - a memorable name for this setting/world",
+  "description": "string - 2-3 paragraphs describing the world, its rules, and atmosphere",
+  "keyLocations": [
+    { "name": "string", "description": "string - 1-2 sentences" }
+  ],
+  "atmosphere": "string - the overall mood and feeling of this world",
+  "themes": ["string array - 3-5 themes this setting explores"],
+  "potentialConflicts": ["string array - 3-5 story hooks or conflicts"]
+}
+
+Rules:
+- Preserve existing details unless the guidance explicitly asks to change them
+- Keep the genre and tone consistent
+- Ensure tags (themes, conflicts, key locations, atmosphere) match the description
+{{customInstruction}}`,
+  userContent: `Refine this {{genreLabel}} setting. Use the current setting data as canon and improve it where helpful.
+
+CURRENT SETTING:
+{{currentSetting}}
+{{lorebookContext}}
+
+Return the full updated setting in the required JSON format.`,
 };
 
 const protagonistGenerationPromptTemplate: PromptTemplate = {
@@ -1786,7 +1824,8 @@ Rules:
 - Add depth and detail to flesh out what they provided
 - Fill in gaps they left blank with fitting suggestions
 {{toneInstruction}}
-{{settingInstruction}}`,
+{{settingInstruction}}
+{{customInstruction}}`,
   userContent: `Elaborate on this character for a {{genreLabel}} story:
 
 {{characterName}}
@@ -1795,6 +1834,38 @@ Rules:
 {{settingContext}}
 
 Expand on these details while preserving everything the user specified.`,
+};
+
+const characterRefinementPromptTemplate: PromptTemplate = {
+  id: 'character-refinement',
+  name: 'Character Refinement',
+  category: 'wizard',
+  description: 'Refines an existing character using current details and guidance',
+  content: `You are a character development expert refining an existing character. Improve clarity, depth, and cohesion while preserving established details.
+
+You MUST respond with valid JSON matching this exact schema:
+{
+  "name": "string - keep the user's name if provided, or suggest one if not",
+  "description": "string - 2-3 sentences expanding on who they are",
+  "background": "string - 2-3 sentences about their history, elaborating on what the user provided",
+  "motivation": "string - what drives them, expanding on the user's input",
+  "traits": ["string array - 4-5 personality traits, incorporating any the user mentioned"],
+  "appearance": "string - brief physical description if not provided"
+}
+
+Rules:
+- Preserve existing details unless the guidance explicitly asks to change them
+- Improve coherence and depth without replacing core traits
+{{toneInstruction}}
+{{settingInstruction}}
+{{customInstruction}}`,
+  userContent: `Refine this character for a {{genreLabel}} story. Use the current character data as canon.
+
+CURRENT CHARACTER:
+{{currentCharacter}}
+{{settingContext}}
+
+Return the full updated character in the required JSON format.`,
 };
 
 const supportingCharactersPromptTemplate: PromptTemplate = {
@@ -1992,6 +2063,171 @@ PROTAGONIST: {{protagonistName}}{{protagonistDescription}}
 {{guidanceSection}}{{lorebookContext}}{{openingInstruction}}
 
 Write an immersive opening that drops the reader into the story. Remember: the author directs the story, so write the protagonist's actions, dialogue, and thoughts as needed.`,
+};
+
+const openingRefinementAdventurePromptTemplate: PromptTemplate = {
+  id: 'opening-refinement-adventure',
+  name: 'Opening Refinement (Adventure)',
+  category: 'wizard',
+  description: 'Refines the opening scene for adventure mode (player controls the protagonist)',
+  content: `You are refining the opening scene of an interactive {{genreLabel}} adventure.
+
+<critical_constraints>
+# ABSOLUTE RULES - VIOLATION IS FAILURE
+1. **NEVER write what {{protagonistName}} does** - no actions, movements, or gestures
+2. **NEVER write what {{protagonistName}} says** - no dialogue or speech
+3. **NEVER write what {{protagonistName}} thinks or feels** - no internal states, emotions, or reactions
+4. **NEVER write what {{protagonistName}} perceives** - avoid "you see", "you notice", "you hear" constructions
+5. **Only describe the environment, NPCs, and situation** - let {{protagonistName}} decide how to engage
+</critical_constraints>
+
+<what_to_write>
+Refine the existing opening by:
+- Enhancing sensory detail and atmosphere
+- Tightening clarity and cohesion
+- Preserving established facts and continuity unless guidance requests change
+- Keeping the situation consistent with the current draft
+</what_to_write>
+
+<style>
+- {{tenseInstruction}}
+- Tone: {{tone}}
+- 2-3 paragraphs of environmental and situational detail
+- Concrete sensory details, not abstractions
+- Reach past the first cliché; favor specific, grounded imagery
+</style>
+
+<npc_dialogue>
+If NPCs speak:
+- Dialogue is imperfect—false starts, evasions, non sequiturs; not prepared speeches
+- Compress rather than explain: don't spell out "A, therefore B, therefore C"
+- Interruptions cut mid-phrase, not after complete clauses
+- Status through brevity: authority figures state and act; they don't justify
+- Single-word responses can carry weight
+- "Said" is invisible—use fancy tags sparingly
+- Characters talk past each other—they advance their own concerns
+</npc_dialogue>
+
+<ending>
+End by presenting a situation that naturally invites {{protagonistName}} to act:
+- An NPC looking expectantly, mid-conversation
+- A door ajar, a sound from within
+- An object of interest within reach
+- A choice point or moment of tension
+
+NO questions. NO "What do you do?" Just the pregnant moment.
+</ending>
+
+<prohibited_patterns>
+Avoid cliché phrases: "like a physical blow," "dust motes dancing," "silence stretched," "metallic tang," "for the first time in years"
+
+Banned words: ozone, orbs (for eyes), tresses, alabaster, porcelain
+
+Also avoid:
+- Purple prose, "not X but Y" constructs
+- Explanation chains: NPCs spelling out logical steps
+- Formal hedging: "Protocol dictates," "It would suggest"
+- Over-clipped dialogue: not every line should be a fragment
+- Dialogue tag overload: "said" is invisible; use fancy tags sparingly
+</prohibited_patterns>
+
+{{outputFormat}}`,
+  userContent: `Refine the opening scene using the current draft. Preserve continuity and constraints.
+
+CURRENT OPENING:
+{{currentOpening}}
+
+TITLE: {{title}}
+GENRE: {{genreLabel}}
+SETTING: {{settingName}} - {{settingDescription}}
+{{atmosphereSection}}
+PROTAGONIST: {{protagonistName}}{{protagonistDescription}}
+{{supportingCharactersSection}}
+{{povInstruction}}
+{{guidanceSection}}{{lorebookContext}}{{openingInstruction}}
+
+Return the full refined opening scene in the required JSON format.`,
+};
+
+const openingRefinementCreativePromptTemplate: PromptTemplate = {
+  id: 'opening-refinement-creative',
+  name: 'Opening Refinement (Creative Writing)',
+  category: 'wizard',
+  description: 'Refines the opening scene for creative writing mode (author directs the story)',
+  content: `You are refining the opening scene of a {{genreLabel}} story in collaboration with an author.
+
+<critical_understanding>
+The person reading this opening is the AUTHOR, not a character. They sit outside the story, directing what happens. The protagonist ({{protagonistName}}) is a fictional character you write—not a stand-in for the author.
+</critical_understanding>
+
+<style>
+- POV: {{povInstruction}}
+- {{tenseInstruction}}
+- Tone: {{tone}}
+- 2-3 paragraphs of literary prose
+- Concrete sensory details grounded in character perception
+- Reach past the first cliché; invisible prose serves the story better than showy prose
+</style>
+
+<what_to_write>
+Refine the existing opening by:
+- Enhancing clarity, rhythm, and atmosphere
+- Deepening the scene's tension or focus
+- Preserving established facts and continuity unless guidance requests change
+- Keeping the situation consistent with the current draft
+</what_to_write>
+
+<protagonist_as_character>
+{{protagonistName}} is a character you control. Write their:
+- Actions and movements
+- Dialogue (if appropriate)
+- Thoughts and perceptions
+- Reactions to the environment and other characters
+
+{{povPerspectiveInstructions}}
+</protagonist_as_character>
+
+<dialogue_craft>
+If dialogue appears:
+- Characters rarely answer directly—they deflect, interrupt, talk past each other
+- Compress rather than explain: don't spell out "A, therefore B, therefore C"
+- Interruptions cut mid-phrase, not after complete clauses
+- Status through brevity: authority figures state and act; they don't justify
+- Single-word responses can carry weight: "Evidence." "Always."
+- "Said" is invisible—use fancy tags sparingly
+- Mix clipped lines with fuller ones; vary rhythm naturally
+</dialogue_craft>
+
+<prohibited_patterns>
+Avoid cliché phrases: "like a physical blow," "ribs like a trapped bird," "heart hammering against ribs," "dust motes dancing," "silence stretched," "metallic tang," "voice dropping an octave," "for the first time in years"
+
+Banned words: ozone, orbs (for eyes), tresses, alabaster, porcelain
+
+Also avoid:
+- Purple prose, "not X but Y" constructs, telling emotions directly
+- Explanation chains: characters spelling out logical steps
+- Formal hedging: "Protocol dictates," "It would suggest"
+- Over-clipped dialogue: not every line should be a fragment
+- Melodrama: hearts shattering, waves of emotion
+- Narrative bows: tying scenes with conclusions or realizations
+</prohibited_patterns>
+
+{{outputFormat}}`,
+  userContent: `Refine the opening scene using the current draft. Preserve continuity while improving prose and flow.
+
+CURRENT OPENING:
+{{currentOpening}}
+
+TITLE: {{title}}
+GENRE: {{genreLabel}}
+SETTING: {{settingName}} - {{settingDescription}}
+{{atmosphereSection}}
+PROTAGONIST: {{protagonistName}}{{protagonistDescription}}
+{{supportingCharactersSection}}
+{{povInstruction}}
+{{guidanceSection}}{{lorebookContext}}{{openingInstruction}}
+
+Return the full refined opening scene in the required JSON format.`,
 };
 
 // ============================================================================
@@ -2301,11 +2537,15 @@ export const PROMPT_TEMPLATES: PromptTemplate[] = [
   imagePortraitGenerationTemplate,
   // Wizard prompts
   settingExpansionPromptTemplate,
+  settingRefinementPromptTemplate,
   protagonistGenerationPromptTemplate,
   characterElaborationPromptTemplate,
+  characterRefinementPromptTemplate,
   supportingCharactersPromptTemplate,
   openingGenerationAdventurePromptTemplate,
   openingGenerationCreativePromptTemplate,
+  openingRefinementAdventurePromptTemplate,
+  openingRefinementCreativePromptTemplate,
   // Image style prompts
   softAnimeStyleTemplate,
   semiRealisticAnimeStyleTemplate,

@@ -2069,6 +2069,13 @@ class SettingsStore {
     }
   }
 
+  private stripWizardSystemPrompts() {
+    if (!this.promptSettings.legacyMigrationComplete) return;
+    for (const process of Object.values(this.wizardSettings)) {
+      process.systemPrompt = undefined;
+    }
+  }
+
   async setFontFamily(fontFamily: string, source: FontSource) {
     this.uiSettings.fontFamily = fontFamily;
     this.uiSettings.fontSource = source;
@@ -2126,6 +2133,7 @@ class SettingsStore {
 
   // Wizard settings methods
   async saveWizardSettings() {
+    this.stripWizardSystemPrompts();
     await database.setSetting('wizard_settings', JSON.stringify(this.wizardSettings));
   }
 

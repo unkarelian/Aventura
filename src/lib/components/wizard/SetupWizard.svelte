@@ -89,6 +89,10 @@
   let expandedSetting = $state<ExpandedSetting | null>(null);
   let isExpandingSetting = $state(false);
   let settingError = $state<string | null>(null);
+  let settingElaborationGuidance = $state(""); // Custom guidance for setting expansion
+  let previousExpandedSetting = $state<ExpandedSetting | null>(null);
+  let previousSettingSeed = $state("");
+  let isEditingSetting = $state(false);
 
   // Step 4: Protagonist/Characters
   let protagonist = $state<GeneratedProtagonist | null>(null);
@@ -105,6 +109,7 @@
   let manualCharacterMotivation = $state("");
   let manualCharacterTraits = $state("");
   let showManualInput = $state(true); // Show manual input by default
+  let characterElaborationGuidance = $state(""); // Custom guidance for character elaboration
 
   // Supporting character input
   let showSupportingCharacterForm = $state(false);
@@ -115,6 +120,7 @@
   let supportingCharacterRelationship = $state("");
   let supportingCharacterTraits = $state("");
   let isElaboratingSupportingCharacter = $state(false);
+  let supportingCharacterGuidance = $state(""); // Custom guidance for supporting character elaboration
 
   // Character Vault integration
   let showProtagonistVaultPicker = $state(false);
@@ -197,7 +203,10 @@
   let openingGuidance = $state(""); // Creative writing mode: user guidance for opening scene
   let generatedOpening = $state<GeneratedOpening | null>(null);
   let isGeneratingOpening = $state(false);
+  let isRefiningOpening = $state(false);
   let openingError = $state<string | null>(null);
+  let isEditingOpening = $state(false);
+  let openingDraft = $state("");
 
   // Check if API key is configured
   const needsApiKey = $derived(settings.needsApiKey);
@@ -361,10 +370,24 @@
     }
   }
 
+  function clearSettingEditState() {
+    isEditingSetting = false;
+    previousExpandedSetting = null;
+    previousSettingSeed = "";
+  }
+
+  function cancelSettingEdit() {
+    if (!isEditingSetting) return;
+    expandedSetting = previousExpandedSetting;
+    settingSeed = previousSettingSeed;
+    clearSettingEditState();
+  }
+
   // Step 3: Use setting as-is without AI expansion
   function useSettingAsIs() {
     if (!settingSeed.trim()) return;
 
+    clearSettingEditState();
     // Create a minimal expanded setting from the seed text
     expandedSetting = {
       name: settingSeed.split(".")[0].trim().slice(0, 50) || "Custom Setting",
@@ -377,8 +400,9 @@
   }
 
   // Step 3: Expand Setting with AI
-  async function expandSetting() {
-    if (!settingSeed.trim() || isExpandingSetting) return;
+  async function expandSetting(seedOverride?: string) {
+    const seed = seedOverride ?? settingSeed;
+    if (!seed.trim() || isExpandingSetting) return;
 
     isExpandingSetting = true;
     settingError = null;
@@ -398,12 +422,16 @@
           : undefined;
 
       expandedSetting = await scenarioService.expandSetting(
-        settingSeed,
+        seed,
         selectedGenre,
         customGenre || undefined,
         settings.wizardSettings.settingExpansion,
         lorebookContext,
+        settingElaborationGuidance.trim() || undefined,
       );
+      clearSettingEditState();
+      // Clear guidance after successful expansion
+      settingElaborationGuidance = "";
     } catch (error) {
       console.error("Failed to expand setting:", error);
       settingError =
@@ -411,6 +439,53 @@
     } finally {
       isExpandingSetting = false;
     }
+  }
+
+  // Step 3: Expand Further (refine using current setting details)
+  async function expandSettingFurther() {
+    if (!expandedSetting || isExpandingSetting) return;
+
+    isExpandingSetting = true;
+    settingError = null;
+
+    try {
+      const lorebookContext =
+        importedEntries.length > 0
+          ? importedEntries.map((e) => ({
+              name: e.name,
+              type: e.type,
+              description: e.description,
+              hiddenInfo: undefined,
+            }))
+          : undefined;
+
+      expandedSetting = await scenarioService.refineSetting(
+        expandedSetting,
+        selectedGenre,
+        customGenre || undefined,
+        settings.wizardSettings.settingExpansion,
+        lorebookContext,
+        settingElaborationGuidance.trim() || undefined,
+      );
+      clearSettingEditState();
+      settingElaborationGuidance = "";
+    } catch (error) {
+      console.error("Failed to refine setting:", error);
+      settingError =
+        error instanceof Error ? error.message : "Failed to refine setting";
+    } finally {
+      isExpandingSetting = false;
+    }
+  }
+
+  // Step 3: Edit setting (populate seed with expanded description)
+  function editSetting() {
+    if (!expandedSetting) return;
+    previousExpandedSetting = expandedSetting;
+    previousSettingSeed = settingSeed;
+    isEditingSetting = true;
+    settingSeed = expandedSetting.description;
+    expandedSetting = null;
   }
 
   // Step 4: Generate Protagonist
@@ -535,15 +610,22 @@
   }
 
   // Step 4: Elaborate on manual character input with AI
-  async function elaborateCharacter() {
+  async function elaborateCharacter(useCurrentProtagonist: boolean = false) {
     if (isElaboratingCharacter) return;
 
+    // Determine source of character data
+    const sourceName = useCurrentProtagonist && protagonist ? protagonist.name : manualCharacterName.trim();
+    const sourceDescription = useCurrentProtagonist && protagonist ? protagonist.description : manualCharacterDescription.trim();
+    const sourceBackground = useCurrentProtagonist && protagonist ? protagonist.background : manualCharacterBackground.trim();
+    const sourceMotivation = useCurrentProtagonist && protagonist ? protagonist.motivation : manualCharacterMotivation.trim();
+    const sourceTraits = useCurrentProtagonist && protagonist
+      ? protagonist.traits
+      : (manualCharacterTraits.trim()
+          ? manualCharacterTraits.split(",").map((t) => t.trim()).filter(Boolean)
+          : undefined);
+
     // Need at least a name or some input
-    const hasInput =
-      manualCharacterName.trim() ||
-      manualCharacterDescription.trim() ||
-      manualCharacterBackground.trim() ||
-      manualCharacterMotivation.trim();
+    const hasInput = sourceName || sourceDescription || sourceBackground || sourceMotivation;
 
     if (!hasInput) {
       protagonistError =
@@ -557,29 +639,53 @@
     try {
       protagonist = await scenarioService.elaborateCharacter(
         {
-          name: manualCharacterName.trim() || undefined,
-          description: manualCharacterDescription.trim() || undefined,
-          background: manualCharacterBackground.trim() || undefined,
-          motivation: manualCharacterMotivation.trim() || undefined,
-          traits: manualCharacterTraits.trim()
-            ? manualCharacterTraits
-                .split(",")
-                .map((t) => t.trim())
-                .filter(Boolean)
-            : undefined,
+          name: sourceName || undefined,
+          description: sourceDescription || undefined,
+          background: sourceBackground || undefined,
+          motivation: sourceMotivation || undefined,
+          traits: sourceTraits,
         },
         expandedSetting,
         selectedGenre,
         customGenre || undefined,
         settings.wizardSettings.characterElaboration,
+        characterElaborationGuidance.trim() || undefined,
       );
       showManualInput = false;
+      // Clear guidance after successful elaboration
+      characterElaborationGuidance = "";
     } catch (error) {
       console.error("Failed to elaborate character:", error);
       protagonistError =
         error instanceof Error
           ? error.message
           : "Failed to elaborate character";
+    } finally {
+      isElaboratingCharacter = false;
+    }
+  }
+
+  // Step 4: Elaborate character further (uses current protagonist data with new guidance)
+  async function elaborateCharacterFurther() {
+    if (!protagonist || isElaboratingCharacter) return;
+
+    isElaboratingCharacter = true;
+    protagonistError = null;
+
+    try {
+      protagonist = await scenarioService.refineCharacter(
+        protagonist,
+        expandedSetting,
+        selectedGenre,
+        customGenre || undefined,
+        settings.wizardSettings.characterElaboration,
+        characterElaborationGuidance.trim() || undefined,
+      );
+      characterElaborationGuidance = "";
+    } catch (error) {
+      console.error("Failed to refine character:", error);
+      protagonistError =
+        error instanceof Error ? error.message : "Failed to refine character";
     } finally {
       isElaboratingCharacter = false;
     }
@@ -650,6 +756,7 @@
     supportingCharacterDescription = "";
     supportingCharacterRelationship = "";
     supportingCharacterTraits = "";
+    supportingCharacterGuidance = "";
   }
 
   function useSupportingCharacterAsIs() {
@@ -709,6 +816,7 @@
         selectedGenre,
         customGenre || undefined,
         settings.wizardSettings.characterElaboration,
+        supportingCharacterGuidance.trim() || undefined,
       );
 
       // Convert elaborated protagonist format to supporting character format
@@ -728,6 +836,8 @@
         supportingCharacters = [...supportingCharacters, newChar];
       }
 
+      // Clear guidance after successful elaboration
+      supportingCharacterGuidance = "";
       cancelSupportingCharacterForm();
     } catch (error) {
       console.error("Failed to elaborate supporting character:", error);
@@ -746,6 +856,7 @@
 
     isGeneratingOpening = true;
     openingError = null;
+    clearOpeningEditState();
 
     const wizardData: WizardData = {
       mode: selectedMode,
@@ -792,6 +903,94 @@
         error instanceof Error ? error.message : "Failed to generate opening";
     } finally {
       isGeneratingOpening = false;
+    }
+  }
+
+  function clearOpeningEditState() {
+    isEditingOpening = false;
+    openingDraft = "";
+  }
+
+  function startOpeningEdit() {
+    if (!generatedOpening || isEditingOpening) return;
+    openingError = null;
+    openingDraft = generatedOpening.scene;
+    isEditingOpening = true;
+  }
+
+  function cancelOpeningEdit() {
+    clearOpeningEditState();
+  }
+
+  function saveOpeningEdit() {
+    if (!generatedOpening) return;
+    if (!openingDraft.trim()) {
+      openingError = "Opening text cannot be empty";
+      return;
+    }
+    generatedOpening = {
+      ...generatedOpening,
+      title: storyTitle.trim() || generatedOpening.title,
+      scene: openingDraft,
+    };
+    clearOpeningEditState();
+  }
+
+  // Step 7: Refine Opening
+  async function refineOpeningScene() {
+    if (!generatedOpening || isRefiningOpening) return;
+
+    isRefiningOpening = true;
+    openingError = null;
+
+    const wizardData: WizardData = {
+      mode: selectedMode,
+      genre: selectedGenre,
+      customGenre: customGenre || undefined,
+      settingSeed,
+      expandedSetting: expandedSetting || undefined,
+      protagonist: protagonist || undefined,
+      characters:
+        supportingCharacters.length > 0 ? supportingCharacters : undefined,
+      writingStyle: {
+        pov: selectedPOV,
+        tense: selectedTense,
+        tone,
+      },
+      title: storyTitle,
+      openingGuidance:
+        selectedMode === "creative-writing" && openingGuidance.trim()
+          ? openingGuidance.trim()
+          : undefined,
+    };
+
+    const lorebookContext =
+      importedEntries.length > 0
+        ? importedEntries.map((e) => ({
+            name: e.name,
+            type: e.type,
+            description: e.description,
+            hiddenInfo: undefined,
+          }))
+        : undefined;
+
+    try {
+      const currentOpening = storyTitle.trim()
+        ? { ...generatedOpening, title: storyTitle.trim() }
+        : generatedOpening;
+      generatedOpening = await scenarioService.refineOpening(
+        wizardData,
+        currentOpening,
+        settings.wizardSettings.openingGeneration,
+        lorebookContext,
+      );
+      clearOpeningEditState();
+    } catch (error) {
+      console.error("Failed to refine opening:", error);
+      openingError =
+        error instanceof Error ? error.message : "Failed to refine opening";
+    } finally {
+      isRefiningOpening = false;
     }
   }
 
@@ -1364,6 +1563,7 @@
     // Populate setting seed
     settingSeed = scenario.settingSeed;
     expandedSetting = null; // Clear expanded setting since we have a new seed
+    clearSettingEditState();
 
     // Add NPCs to supporting characters
     const importedNpcs: GeneratedCharacter[] = scenario.npcs.map(npc => ({
@@ -1471,6 +1671,7 @@
         settingSeed = result.settingSeed;
         // Clear any previous expanded setting since we have new content
         expandedSetting = null;
+        clearSettingEditState();
         // Automatically use as-is
         useSettingAsIs();
       }
@@ -2097,19 +2298,35 @@
             {/if}
           </div>
 
+          <!-- Elaboration Guidance (visible before expansion) -->
           {#if settingSeed.trim().length > 0 && !expandedSetting}
+            <div>
+              <label class="mb-1 block text-xs font-medium text-surface-400">
+                Elaboration guidance (optional)
+              </label>
+              <textarea
+                bind:value={settingElaborationGuidance}
+                placeholder="e.g., Focus on dark gothic atmosphere, add steampunk elements, make the magic system more complex..."
+                class="input min-h-[60px] resize-none text-sm"
+                rows="2"
+              ></textarea>
+            </div>
+          {/if}
+
+          {#if (settingSeed.trim().length > 0 || isEditingSetting) && !expandedSetting}
             <div class="flex flex-wrap gap-2">
               <button
                 class="btn btn-secondary flex items-center gap-2"
                 onclick={useSettingAsIs}
+                disabled={!settingSeed.trim()}
               >
                 <Check class="h-4 w-4" />
                 Use As-Is
               </button>
               <button
                 class="btn btn-primary flex items-center gap-2"
-                onclick={expandSetting}
-                disabled={isExpandingSetting}
+                onclick={() => expandSetting()}
+                disabled={isExpandingSetting || !settingSeed.trim()}
               >
                 {#if isExpandingSetting}
                   <Loader2 class="h-4 w-4 animate-spin" />
@@ -2119,6 +2336,16 @@
                   Expand with AI
                 {/if}
               </button>
+              {#if isEditingSetting}
+                <button
+                  class="btn btn-secondary flex items-center gap-2"
+                  onclick={cancelSettingEdit}
+                  title="Restore the previous expanded setting"
+                >
+                  <X class="h-4 w-4" />
+                  Cancel Edit
+                </button>
+              {/if}
             </div>
           {/if}
 
@@ -2135,20 +2362,22 @@
                 <div class="flex gap-2">
                   <button
                     class="text-xs text-surface-400 hover:text-surface-200 flex items-center gap-1"
-                    onclick={() => (expandedSetting = null)}
+                    onclick={editSetting}
+                    title="Edit the expanded description"
                   >
                     <PenTool class="h-3 w-3" />
                     Edit
                   </button>
                   <button
                     class="text-xs text-accent-400 hover:text-accent-300 flex items-center gap-1"
-                    onclick={expandSetting}
+                    onclick={expandSettingFurther}
                     disabled={isExpandingSetting}
+                    title="Refine using the current setting details"
                   >
-                    <RefreshCw
-                      class="h-3 w-3 {isExpandingSetting ? 'animate-spin' : ''}"
+                    <Sparkles
+                      class="h-3 w-3 {isExpandingSetting ? 'animate-pulse' : ''}"
                     />
-                    {isExpandingSetting ? "Regenerating..." : "Regenerate"}
+                    {isExpandingSetting ? "Expanding..." : "Expand Further"}
                   </button>
                 </div>
               </div>
@@ -2181,6 +2410,19 @@
                     >{theme}</span
                   >
                 {/each}
+              </div>
+
+              <!-- Guidance field for iterative refinement -->
+              <div class="pt-2 border-t border-surface-700">
+                <label class="mb-1 block text-xs font-medium text-surface-400">
+                  Refinement guidance (optional)
+                </label>
+                <textarea
+                  bind:value={settingElaborationGuidance}
+                  placeholder="e.g., Add more detail about the magic system, make the atmosphere darker..."
+                  class="input min-h-[50px] resize-none text-sm"
+                  rows="2"
+                ></textarea>
               </div>
             </div>
           {/if}
@@ -2316,6 +2558,19 @@
                     />
                   </div>
 
+                  <div>
+                    <label
+                      class="mb-1 block text-xs font-medium text-surface-400"
+                      >Elaboration guidance (optional)</label
+                    >
+                    <textarea
+                      bind:value={characterElaborationGuidance}
+                      placeholder="e.g., Make them more cynical and world-weary, add a tragic backstory..."
+                      class="input min-h-[50px] resize-none text-sm"
+                      rows="2"
+                    ></textarea>
+                  </div>
+
                   <div
                     class="flex flex-wrap gap-2 pt-2 border-t border-surface-700"
                   >
@@ -2330,7 +2585,7 @@
                     </button>
                     <button
                       class="btn btn-primary btn-sm flex items-center gap-1"
-                      onclick={elaborateCharacter}
+                      onclick={() => elaborateCharacter()}
                       disabled={isElaboratingCharacter ||
                         (!manualCharacterName.trim() &&
                           !manualCharacterDescription.trim() &&
@@ -2388,18 +2643,18 @@
                       </button>
                       <button
                         class="text-xs text-accent-400 hover:text-accent-300 flex items-center gap-1 ml-2"
-                        onclick={generateProtagonist}
-                        disabled={isGeneratingProtagonist}
-                        title="Generate a different character"
+                        onclick={elaborateCharacterFurther}
+                        disabled={isElaboratingCharacter}
+                        title="Re-elaborate with new guidance"
                       >
-                        <RefreshCw
-                          class="h-3 w-3 {isGeneratingProtagonist
-                            ? 'animate-spin'
+                        <Sparkles
+                          class="h-3 w-3 {isElaboratingCharacter
+                            ? 'animate-pulse'
                             : ''}"
                         />
-                        {isGeneratingProtagonist
-                          ? "Regenerating..."
-                          : "Regenerate"}
+                        {isElaboratingCharacter
+                          ? "Elaborating..."
+                          : "Elaborate Further"}
                       </button>
                     </div>
                   </div>
@@ -2428,6 +2683,19 @@
                       {/each}
                     </div>
                   {/if}
+
+                  <!-- Guidance field for iterative refinement -->
+                  <div class="pt-2 border-t border-surface-700">
+                    <label class="mb-1 block text-xs font-medium text-surface-400">
+                      Refinement guidance (optional)
+                    </label>
+                    <textarea
+                      bind:value={characterElaborationGuidance}
+                      placeholder="e.g., Add internal conflict, make them more mysterious..."
+                      class="input min-h-[50px] resize-none text-sm"
+                      rows="2"
+                    ></textarea>
+                  </div>
                 </div>
               {:else}
                 <!-- Fallback: Show generate button -->
@@ -2582,6 +2850,19 @@
                         placeholder="e.g., cunning, loyal, mysterious..."
                         class="input"
                       />
+                    </div>
+
+                    <div>
+                      <label
+                        class="mb-1 block text-xs font-medium text-surface-400"
+                        >Elaboration guidance (optional)</label
+                      >
+                      <textarea
+                        bind:value={supportingCharacterGuidance}
+                        placeholder="e.g., Make them more sinister, add a hidden agenda..."
+                        class="input min-h-[50px] resize-none text-sm"
+                        rows="2"
+                      ></textarea>
                     </div>
 
                     <div
@@ -3230,6 +3511,8 @@
                         "The scene begins here.",
                     },
                   };
+                  openingError = null;
+                  clearOpeningEditState();
                 }}
               >
                 <Check class="h-3 w-3" />
@@ -3267,7 +3550,7 @@
               <button
                 class="btn btn-secondary flex items-center gap-2"
                 onclick={generateOpeningScene}
-                disabled={isGeneratingOpening}
+                disabled={isGeneratingOpening || isRefiningOpening}
               >
                 {#if isGeneratingOpening}
                   <Loader2 class="h-4 w-4 animate-spin" />
@@ -3300,15 +3583,66 @@
           {/if}
 
           {#if generatedOpening}
-            <div class="card bg-surface-900 p-4 max-h-64 overflow-y-auto">
-              <h3 class="font-semibold text-surface-100 mb-2">
-                {generatedOpening?.title || storyTitle}
-              </h3>
-              <div class="prose prose-invert prose-sm max-w-none">
-                <p class="text-surface-300 whitespace-pre-wrap">
-                  {generatedOpening?.scene || ""}
-                </p>
+            <div class="card bg-surface-900 p-4 space-y-3">
+              <div class="flex items-start justify-between gap-3">
+                <h3 class="font-semibold text-surface-100">
+                  {generatedOpening?.title || storyTitle}
+                </h3>
+                {#if !isEditingOpening}
+                  <div class="flex items-center gap-2">
+                    <button
+                      class="text-xs text-surface-400 hover:text-surface-200 flex items-center gap-1"
+                      onclick={startOpeningEdit}
+                      title="Edit the opening text"
+                    >
+                      <PenTool class="h-3 w-3" />
+                      Edit
+                    </button>
+                    <button
+                      class="text-xs text-accent-400 hover:text-accent-300 flex items-center gap-1"
+                      onclick={refineOpeningScene}
+                      disabled={isRefiningOpening || isGeneratingOpening}
+                      title="Refine using the current opening text"
+                    >
+                      {#if isRefiningOpening}
+                        <Loader2 class="h-3 w-3 animate-spin" />
+                        Refining...
+                      {:else}
+                        <Sparkles class="h-3 w-3" />
+                        Refine Further
+                      {/if}
+                    </button>
+                  </div>
+                {/if}
               </div>
+              {#if isEditingOpening}
+                <textarea
+                  bind:value={openingDraft}
+                  class="input min-h-[140px] resize-y text-sm"
+                  rows="6"
+                ></textarea>
+                <div class="flex justify-end gap-2">
+                  <button
+                    class="btn btn-secondary btn-sm"
+                    onclick={cancelOpeningEdit}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    class="btn btn-primary btn-sm"
+                    onclick={saveOpeningEdit}
+                    disabled={!openingDraft.trim()}
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              {:else}
+                <div class="prose prose-invert prose-sm max-w-none max-h-64 overflow-y-auto">
+                  <p class="text-surface-300 whitespace-pre-wrap">
+                    {generatedOpening?.scene || ""}
+                  </p>
+                </div>
+              {/if}
             </div>
           {/if}
 
@@ -3376,6 +3710,8 @@
           onclick={createStory}
           disabled={!storyTitle.trim() ||
             isGeneratingOpening ||
+            isRefiningOpening ||
+            isEditingOpening ||
             !generatedOpening}
           title={!generatedOpening ? "Generate an opening scene first" : ""}
         >
