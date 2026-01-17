@@ -876,7 +876,7 @@
         <div class="flex-1"></div>
 
         <button
-          class="flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors mt-auto"
+          class="flex items-center justify-center gap-2 rounded-md px-2.5 py-1.5 text-sm text-red-400 bg-red-500/10 hover:bg-red-500/15 hover:text-red-300 transition-colors mt-auto"
           onclick={handleResetAll}
         >
           <RotateCcw class="h-3.5 w-3.5 opacity-70 flex-shrink-0" />
