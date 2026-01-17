@@ -1,5 +1,5 @@
 import { settings, DEFAULT_OPENROUTER_PROFILE_ID, DEFAULT_NANOGPT_PROFILE_ID, type ProviderPreset } from '$lib/stores/settings.svelte';
-import type { ReasoningEffort } from '$lib/types';
+import type { ReasoningEffort, GenerationPreset } from '$lib/types';
 import { OpenAIProvider, OPENROUTER_API_URL } from './openrouter';
 import { buildExtraBody } from './requestOverrides';
 import type { Message } from './types';
@@ -434,15 +434,15 @@ class ScenarioService {
   }
 
   private buildProcessExtraBody(
-    overrides: ProcessSettings | undefined,
+    presetConfig: GenerationPreset | Partial<ProcessSettings>,
     baseProvider: Record<string, unknown>,
     defaultReasoningEffort: ReasoningEffort
   ) {
     return buildExtraBody({
       manualMode: settings.advancedRequestSettings.manualMode,
-      manualBody: overrides?.manualBody,
-      reasoningEffort: overrides?.reasoningEffort ?? defaultReasoningEffort,
-      providerOnly: overrides?.providerOnly,
+      manualBody: presetConfig.manualBody,
+      reasoningEffort: presetConfig.reasoningEffort ?? defaultReasoningEffort,
+      providerOnly: presetConfig.providerOnly,
       baseProvider,
     });
   }
