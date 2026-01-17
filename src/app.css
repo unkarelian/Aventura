@@ -1825,6 +1825,18 @@
    MOBILE & TOUCH FRIENDLY STYLES
    ============================================= */
 
+/* Hide all scrollbars on mobile devices */
+@media (max-width: 640px) {
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  
+  *::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 /* Scrollbar hide utility */
 .scrollbar-hide {
   scrollbar-width: none;
