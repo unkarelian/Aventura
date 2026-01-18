@@ -99,6 +99,28 @@ const storyContextBlockMacro: SimpleMacro = {
   defaultValue: '',
 };
 
+const visualProseBlockMacro: SimpleMacro = {
+  id: 'visual-prose-block',
+  name: 'Visual Prose Block',
+  token: 'visualProseBlock',
+  type: 'simple',
+  builtin: true,
+  dynamic: true,
+  description: 'Visual Prose instructions - auto-resolved based on visualProseMode in context (empty if disabled)',
+  defaultValue: '',
+};
+
+const inlineImageBlockMacro: SimpleMacro = {
+  id: 'inline-image-block',
+  name: 'Inline Image Block',
+  token: 'inlineImageBlock',
+  type: 'simple',
+  builtin: true,
+  dynamic: true,
+  description: 'Inline image instructions - auto-resolved based on inlineImageMode in context (empty if disabled)',
+  defaultValue: '',
+};
+
 // ============================================================================
 // BUILTIN COMPLEX MACROS
 // ============================================================================
@@ -611,6 +633,8 @@ export const BUILTIN_MACROS: Macro[] = [
   storyContextBlockMacro,
   visualProseInstructionsMacro,
   inlineImageInstructionsMacro,
+  visualProseBlockMacro,
+  inlineImageBlockMacro,
   // Complex macros
   styleInstructionMacro,
   responseInstructionMacro,
@@ -635,8 +659,8 @@ export const CONTEXT_PLACEHOLDERS: ContextPlaceholder[] = [
   { id: 'input-label', name: 'Input Label', token: 'inputLabel', category: 'story', description: '"Player Action" in adventure mode, "Author Direction" in creative writing' },
   { id: 'active-threads', name: 'Active Threads', token: 'activeThreads', category: 'story', description: 'Currently active story threads and plot points' },
   { id: 'lorebook-context', name: 'Lorebook Context', token: 'lorebookContext', category: 'story', description: 'Relevant lorebook entries for the current context' },
-  { id: 'visual-prose-block', name: 'Visual Prose Block', token: 'visualProseBlock', category: 'story', description: 'Visual Prose instructions (empty if disabled, full instructions if enabled)' },
-  { id: 'inline-image-block', name: 'Inline Image Block', token: 'inlineImageBlock', category: 'story', description: 'Inline image instructions (empty if disabled, full instructions if enabled)' },
+  // Note: visualProseBlock and inlineImageBlock are now dynamic macros, not context placeholders
+  // They auto-resolve based on visualProseMode/inlineImageMode in the PromptContext
 
   // Entity tracking
   { id: 'entity-counts', name: 'Entity Counts', token: 'entityCounts', category: 'entities', description: 'Count of tracked characters, locations, items, etc.' },
@@ -705,6 +729,7 @@ export const CONTEXT_PLACEHOLDERS: ContextPlaceholder[] = [
   { id: 'title', name: 'Title', token: 'title', category: 'wizard', description: 'Story or scene title' },
   { id: 'atmosphere-section', name: 'Atmosphere Section', token: 'atmosphereSection', category: 'wizard', description: 'Atmosphere and mood description' },
   { id: 'supporting-characters-section', name: 'Supporting Characters', token: 'supportingCharactersSection', category: 'wizard', description: 'Information about supporting characters' },
+  { id: 'setting-themes', name: 'Setting Themes', token: 'settingThemes', category: 'wizard', description: 'Formatted list of story themes from the wizard setting' },
 
   // Image generation
   { id: 'max-images', name: 'Max Images', token: 'maxImages', category: 'other', description: 'Maximum number of images to generate (0 = unlimited)' },
@@ -721,6 +746,9 @@ export const CONTEXT_PLACEHOLDERS: ContextPlaceholder[] = [
 
   // Tier 3 Entry Selection
   { id: 'entry-summaries', name: 'Entry Summaries', token: 'entrySummaries', category: 'service', description: 'Numbered list of available lorebook entries for Tier 3 selection' },
+
+  // Lorebook Classifier
+  { id: 'entries-json', name: 'Entries JSON', token: 'entriesJson', category: 'service', description: 'JSON array of lorebook entries to classify (with index, name, content, keywords)' },
 
   // Action Choices service
   { id: 'style-guidance', name: 'Style Guidance', token: 'styleGuidance', category: 'service', description: 'Instructions for matching the user\'s writing style based on their recent actions' },
@@ -1480,6 +1508,21 @@ const lorebookClassifierPromptTemplate: PromptTemplate = {
   category: 'service',
   description: 'Classifies lorebook entries into appropriate categories',
   content: `You are a precise classifier for fantasy/RPG lorebook entries. Analyze the name, content, and keywords to determine the most appropriate category. Be decisive - pick the single best category for each entry. Respond only with the JSON array.`,
+  userContent: `Classify each lorebook entry into exactly one category. The categories are:
+- character: A person, creature, or being with personality/traits (NPCs, monsters, etc.)
+- location: A place, area, building, or geographic feature
+- item: An object, weapon, artifact, tool, or piece of equipment
+- faction: An organization, group, guild, kingdom, or collective entity
+- concept: A magic system, rule, tradition, technology, or abstract idea
+- event: A historical occurrence, battle, ceremony, or significant happening
+
+For each entry, output ONLY a JSON array with objects containing "index" and "type".
+
+Entries to classify:
+{{entriesJson}}
+
+Respond with ONLY valid JSON in this exact format:
+[{"index": 0, "type": "character"}, {"index": 1, "type": "location"}, ...]`,
 };
 
 const loreManagementPromptTemplate: PromptTemplate = {

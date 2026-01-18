@@ -1120,7 +1120,11 @@ class AIService {
     const protagonist = worldState.characters.find(c => c.relationship === 'self');
     const protagonistName = protagonist?.name || 'the protagonist';
 
-    // Build prompt context for macro expansion
+    // Determine inline image mode (requires both setting enabled and image gen service available)
+    const inlineImageMode = (story.currentStory?.settings?.inlineImageMode ?? false) && ImageGenerationService.isEnabled();
+    log('Inline image mode check:', { inlineImageMode, storySettings: story.currentStory?.settings, imageGenEnabled: ImageGenerationService.isEnabled() });
+
+    // Build prompt context for macro expansion - blocks auto-resolve based on mode flags
     const promptContext: PromptContext = {
       mode,
       pov: pov ?? 'second',
@@ -1133,6 +1137,7 @@ class AIService {
       tone: tone ?? undefined,
       themes: themes ?? undefined,
       visualProseMode: visualProseMode ?? false,
+      inlineImageMode,
     };
 
     // Determine the base prompt source using the centralized prompt service
@@ -1246,27 +1251,8 @@ class AIService {
       basePrompt += '\n───────────────────────────────────────';
     }
 
-// Replace {{visualProseBlock}} placeholder with visual prose instructions if enabled
-    if (visualProseMode) {
-      const visualProseInstructions = promptService.resolveMacro('visualProseInstructions', promptContext);
-      basePrompt = basePrompt.replace(/\{\{visualProseBlock\}\}/g, visualProseInstructions);
-    } else {
-      // Remove the placeholder when Visual Prose mode is disabled
-      basePrompt = basePrompt.replace(/\{\{visualProseBlock\}\}/g, '');
-    }
-
-    // Replace {{inlineImageBlock}} placeholder with inline image instructions if enabled
-    const inlineImageMode = story.currentStory?.settings?.inlineImageMode ?? false;
-    const imageGenEnabled = ImageGenerationService.isEnabled();
-    log('Inline image mode check:', { inlineImageMode, imageGenEnabled, storySettings: story.currentStory?.settings });
-    if (inlineImageMode && imageGenEnabled) {
-      const inlineImageInstructions = promptService.resolveMacro('inlineImageInstructions', promptContext);
-      log('Injecting inline image instructions, length:', inlineImageInstructions.length);
-      basePrompt = basePrompt.replace(/\{\{inlineImageBlock\}\}/g, inlineImageInstructions);
-    } else {
-      // Remove the placeholder when Inline Image mode is disabled
-      basePrompt = basePrompt.replace(/\{\{inlineImageBlock\}\}/g, '');
-    }
+    // Note: {{visualProseBlock}} and {{inlineImageBlock}} are now auto-resolved
+    // by the macro engine based on visualProseMode/inlineImageMode in the context
 
     return basePrompt;
   }

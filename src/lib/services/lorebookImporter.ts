@@ -239,35 +239,23 @@ export async function classifyEntriesWithLLM(
         keywords: entry.keywords,
       }));
 
-      const prompt = `Classify each lorebook entry into exactly one category. The categories are:
-- character: A person, creature, or being with personality/traits (NPCs, monsters, etc.)
-- location: A place, area, building, or geographic feature
-- item: An object, weapon, artifact, tool, or piece of equipment
-- faction: An organization, group, guild, kingdom, or collective entity
-- concept: A magic system, rule, tradition, technology, or abstract idea
-- event: A historical occurrence, battle, ceremony, or significant happening
+      const promptContext: PromptContext = {
+        mode,
+        pov: mode === 'creative-writing' ? 'third' : 'second',
+        tense: mode === 'creative-writing' ? 'past' : 'present',
+        protagonistName: 'the protagonist',
+      };
 
-For each entry, output ONLY a JSON array with objects containing "index" and "type".
-
-Entries to classify:
-${JSON.stringify(entriesForPrompt, null, 2)}
-
-Respond with ONLY valid JSON in this exact format:
-[{"index": 0, "type": "character"}, {"index": 1, "type": "location"}, ...]`;
+      const systemPrompt = promptService.renderPrompt('lorebook-classifier', promptContext);
+      const userPrompt = promptService.renderUserPrompt('lorebook-classifier', promptContext, {
+        entriesJson: JSON.stringify(entriesForPrompt, null, 2),
+      });
 
       const response = await provider.generateResponse({
         model: lorebookSettings.model,
         messages: [
-          {
-            role: 'system',
-            content: promptService.renderPrompt('lorebook-classifier', {
-              mode,
-              pov: mode === 'creative-writing' ? 'third' : 'second',
-              tense: mode === 'creative-writing' ? 'past' : 'present',
-              protagonistName: 'the protagonist',
-            } satisfies PromptContext),
-          },
-          { role: 'user', content: prompt },
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
         ],
         temperature: lorebookSettings.temperature,
         maxTokens: lorebookSettings.maxTokens,

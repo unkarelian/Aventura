@@ -153,6 +153,9 @@ export interface PromptContext {
   // Visual Prose Mode
   visualProseMode?: boolean;
 
+  // Inline Image Mode
+  inlineImageMode?: boolean;
+
   /**
    * Additional custom values for user-defined macros.
    * Key is the macro token, value is the resolved text.

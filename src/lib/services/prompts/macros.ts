@@ -214,16 +214,22 @@ export class MacroEngine {
           return context.themes?.join(', ') || macro.defaultValue;
         case 'storyContextBlock':
           return this.buildStoryContextBlock(context);
+        case 'visualProseBlock':
+          // Resolve to visual prose instructions if mode is enabled, empty otherwise
+          if (context.visualProseMode) {
+            return this.resolve('visualProseInstructions', context, storyOverrides);
+          }
+          return '';
+        case 'inlineImageBlock':
+          // Resolve to inline image instructions if mode is enabled, empty otherwise
+          if (context.inlineImageMode) {
+            return this.resolve('inlineImageInstructions', context, storyOverrides);
+          }
+          return '';
         default:
           // Unknown dynamic macro, fall through to default
           break;
       }
-    }
-
-    // Handle Visual Prose Instructions macro - only include if visualProseMode is enabled
-    if (macro.token === 'visualProseInstructions') {
-      // This macro is not directly used; visualProseBlock placeholder handles conditional inclusion
-      return macro.defaultValue;
     }
 
     return macro.defaultValue;
