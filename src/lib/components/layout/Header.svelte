@@ -78,6 +78,7 @@
   }
 
   async function exportAventura() {
+    if (!story.currentStory) return;
     const [
       entries,
       characters,
@@ -90,21 +91,21 @@
       branches,
       chapters,
     ] = await Promise.all([
-      database.getStoryEntries(story.currentStory!.id),
-      database.getCharacters(story.currentStory!.id),
-      database.getLocations(story.currentStory!.id),
-      database.getItems(story.currentStory!.id),
-      database.getStoryBeats(story.currentStory!.id),
-      database.getEntries(story.currentStory!.id),
-      database.getEmbeddedImagesForStory(story.currentStory!.id),
-      database.getCheckpoints(story.currentStory!.id),
-      database.getBranches(story.currentStory!.id),
-      database.getChapters(story.currentStory!.id),
+      database.getStoryEntries(story.currentStory.id),
+      database.getCharacters(story.currentStory.id),
+      database.getLocations(story.currentStory.id),
+      database.getItems(story.currentStory.id),
+      database.getStoryBeats(story.currentStory.id),
+      database.getEntries(story.currentStory.id),
+      database.getEmbeddedImagesForStory(story.currentStory.id),
+      database.getCheckpoints(story.currentStory.id),
+      database.getBranches(story.currentStory.id),
+      database.getChapters(story.currentStory.id),
     ]);
     await handleExport(
       () =>
         exportService.exportToAventura(
-          story.currentStory!,
+          story.currentStory,
           entries,
           characters,
           locations,
@@ -121,10 +122,11 @@
   }
 
   async function exportMarkdown() {
+    if (!story.currentStory) return;
     await handleExport(
       () =>
         exportService.exportToMarkdown(
-          story.currentStory!,
+          story.currentStory,
           story.entries,
           story.characters,
           story.locations,
@@ -135,8 +137,9 @@
   }
 
   async function exportText() {
+    if (!story.currentStory) return;
     await handleExport(
-      () => exportService.exportToText(story.currentStory!, story.entries),
+      () => exportService.exportToText(story.currentStory, story.entries),
       'Plain Text (.txt)',
     );
   }
