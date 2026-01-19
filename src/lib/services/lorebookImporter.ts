@@ -180,7 +180,7 @@ function inferEntryType(name: string, content: string): EntryType {
 }
 
 /**
- * LLM-based entry type classification using configurable settings.
+ * LLM-based entry type classification using Agent Profiles system.
  * Classifies entries in batches with concurrent requests for faster processing.
  * @param entries - The entries to classify
  * @param onProgress - Optional progress callback
@@ -193,11 +193,15 @@ export async function classifyEntriesWithLLM(
 ): Promise<ImportedEntry[]> {
   if (entries.length === 0) return entries;
 
-  // Get lorebook classifier settings
-  const lorebookSettings = settings.systemServicesSettings.lorebookClassifier;
+  // Get preset configuration from Agent Profiles system
+  const presetId = settings.getServicePresetId('lorebookClassifier');
+  const preset = settings.getPresetConfig(presetId, 'Lorebook Classifier');
 
-  // Use specified profile, or fall back to main narrative profile
-  const profileId = lorebookSettings.profileId ?? settings.apiSettings.mainNarrativeProfileId;
+  // Get lorebook-specific settings (batchSize, maxConcurrent)
+  const specificSettings = settings.serviceSpecificSettings.lorebookClassifier;
+
+  // Get API settings from the profile assigned to this preset (null = use main narrative profile)
+  const profileId = preset.profileId ?? settings.apiSettings.mainNarrativeProfileId;
   const apiSettings = settings.getApiSettingsForProfile(profileId);
 
   if (!apiSettings.openaiApiKey) {
@@ -206,15 +210,15 @@ export async function classifyEntriesWithLLM(
   }
 
   const provider = new OpenAIProvider(apiSettings);
-  const BATCH_SIZE = lorebookSettings.batchSize;
-  const MAX_CONCURRENT = lorebookSettings.maxConcurrent;
+  const BATCH_SIZE = specificSettings.batchSize;
+  const MAX_CONCURRENT = specificSettings.maxConcurrent;
   const classifiedEntries = [...entries];
 
   log('Starting LLM classification', {
     totalEntries: entries.length,
     batchSize: BATCH_SIZE,
     maxConcurrent: MAX_CONCURRENT,
-    model: lorebookSettings.model,
+    model: preset.model,
   });
 
   // Create batches
@@ -252,18 +256,18 @@ export async function classifyEntriesWithLLM(
       });
 
       const response = await provider.generateResponse({
-        model: lorebookSettings.model,
+        model: preset.model,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        temperature: lorebookSettings.temperature,
-        maxTokens: lorebookSettings.maxTokens,
+        temperature: preset.temperature,
+        maxTokens: preset.maxTokens,
         extraBody: buildExtraBody({
           manualMode: settings.advancedRequestSettings.manualMode,
-          manualBody: lorebookSettings.manualBody,
-          reasoningEffort: lorebookSettings.reasoningEffort,
-          providerOnly: lorebookSettings.providerOnly,
+          manualBody: preset.manualBody,
+          reasoningEffort: preset.reasoningEffort,
+          providerOnly: preset.providerOnly,
         }),
       });
 
