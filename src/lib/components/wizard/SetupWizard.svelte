@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { slide } from "svelte/transition";
   import { story } from "$lib/stores/story.svelte";
   import { ui } from "$lib/stores/ui.svelte";
   import { settings } from "$lib/stores/settings.svelte";
@@ -17,65 +16,48 @@
   import {
     parseSillyTavernLorebook,
     classifyEntriesWithLLM,
-    getImportSummary,
     type ImportedEntry,
     type LorebookImportResult,
   } from "$lib/services/lorebookImporter";
   import {
     convertCardToScenario,
     readCharacterCardFile,
-    type CardImportResult,
   } from "$lib/services/characterCardImporter";
   import { NanoGPTImageProvider } from "$lib/services/ai/nanoGPTImageProvider";
   import { promptService } from "$lib/services/prompts";
-  import { normalizeImageDataUrl } from "$lib/utils/image";
   import type {
     StoryMode,
     POV,
-    EntryType,
     VaultCharacter,
     VaultLorebook,
     VaultLorebookEntry,
     VaultScenario,
   } from "$lib/types";
-  import VaultCharacterPicker from "$lib/components/vault/VaultCharacterPicker.svelte";
-  import VaultLorebookPicker from "$lib/components/vault/VaultLorebookPicker.svelte";
-  import VaultScenarioPicker from "$lib/components/vault/VaultScenarioPicker.svelte";
   import { lorebookVault } from "$lib/stores/lorebookVault.svelte";
   import { scenarioVault } from "$lib/stores/scenarioVault.svelte";
   import {
     X,
     ChevronLeft,
     ChevronRight,
-    Loader2,
-    Sword,
-    Feather,
-    Wand2,
-    Rocket,
-    Building,
-    Skull,
-    Search,
-    Heart,
     Sparkles,
-    Globe,
-    User,
-    Users,
-    PenTool,
     Play,
-    RefreshCw,
-    Upload,
-    FileJson,
-    Archive,
-    Check,
-    AlertCircle,
-    Book,
-    Trash2,
-    Plus,
-    ImageIcon,
-    ImageUp,
   } from "lucide-svelte";
 
   import { QUICK_START_SEEDS } from "$lib/services/templates";
+  import type { ImportedLorebookItem } from "./wizardTypes";
+  import { replaceUserPlaceholders } from "./wizardTypes";
+
+  // Step components
+  import {
+    Step1Mode,
+    Step2Lorebook,
+    Step3Genre,
+    Step4Setting,
+    Step5Characters,
+    Step6Portraits,
+    Step7WritingStyle,
+    Step8Opening,
+  } from "./steps";
 
   interface Props {
     onClose: () => void;
@@ -91,15 +73,6 @@
   let selectedScenarioId = $state<string | null>(null);
   let scenarioCarouselRef = $state<HTMLDivElement | null>(null);
 
-  const templateIcons: Record<string, typeof Wand2> = {
-    "fantasy-adventure": Wand2,
-    "scifi-exploration": Rocket,
-    "mystery-investigation": Search,
-    "horror-survival": Skull,
-    "slice-of-life": Heart,
-    "historical-drama": Building,
-  };
-
   // Step 1: Mode
   let selectedMode = $state<StoryMode>("adventure");
 
@@ -112,7 +85,7 @@
   let expandedSetting = $state<ExpandedSetting | null>(null);
   let isExpandingSetting = $state(false);
   let settingError = $state<string | null>(null);
-  let settingElaborationGuidance = $state(""); // Custom guidance for setting expansion
+  let settingElaborationGuidance = $state("");
   let previousExpandedSetting = $state<ExpandedSetting | null>(null);
   let previousSettingSeed = $state("");
   let isEditingSetting = $state(false);
@@ -131,8 +104,8 @@
   let manualCharacterBackground = $state("");
   let manualCharacterMotivation = $state("");
   let manualCharacterTraits = $state("");
-  let showManualInput = $state(true); // Show manual input by default
-  let characterElaborationGuidance = $state(""); // Custom guidance for character elaboration
+  let showManualInput = $state(true);
+  let characterElaborationGuidance = $state("");
 
   // Supporting character input
   let showSupportingCharacterForm = $state(false);
@@ -143,7 +116,7 @@
   let supportingCharacterRelationship = $state("");
   let supportingCharacterTraits = $state("");
   let isElaboratingSupportingCharacter = $state(false);
-  let supportingCharacterGuidance = $state(""); // Custom guidance for supporting character elaboration
+  let supportingCharacterGuidance = $state("");
 
   // Character Vault integration
   let showProtagonistVaultPicker = $state(false);
@@ -156,21 +129,11 @@
   let protagonistPortrait = $state<string | null>(null);
   let isGeneratingProtagonistPortrait = $state(false);
   let portraitError = $state<string | null>(null);
-  // Supporting character visual descriptors and portraits keyed by character NAME (not index)
-  // This prevents data loss when characters are removed/reordered
   let supportingCharacterVisualDescriptors = $state<Record<string, string>>({});
   let supportingCharacterPortraits = $state<Record<string, string | null>>({});
   let generatingPortraitName = $state<string | null>(null);
 
-  // Step 2: Import Lorebook (optional - moved to early position)
-  interface ImportedLorebookItem {
-    id: string; // Unique ID for removal
-    filename: string; // Display name
-    result: LorebookImportResult;
-    entries: ImportedEntry[];
-    expanded: boolean;
-  }
-
+  // Step 2: Import Lorebook
   let importedLorebooks = $state<ImportedLorebookItem[]>([]);
   let isImporting = $state(false);
   let isClassifying = $state(false);
@@ -178,41 +141,21 @@
   let importError = $state<string | null>(null);
   let importFileInput: HTMLInputElement | null = null;
 
-  // Combine all entries from all lorebooks for use in later steps
   const importedEntries = $derived(
     importedLorebooks.flatMap((lb) => lb.entries),
   );
 
-  // Combined summary for display
-  const importSummary = $derived.by(() => {
-    if (importedLorebooks.length === 0) return null;
-    const entries = importedEntries;
-    return {
-      total: entries.length,
-      withContent: entries.filter((e) => e.description?.trim()).length,
-      byType: {
-        character: entries.filter((e) => e.type === "character").length,
-        location: entries.filter((e) => e.type === "location").length,
-        item: entries.filter((e) => e.type === "item").length,
-        faction: entries.filter((e) => e.type === "faction").length,
-        concept: entries.filter((e) => e.type === "concept").length,
-        event: entries.filter((e) => e.type === "event").length,
-      },
-    };
-  });
-
-  // Step 4: Character Card Import (optional)
+  // Step 4: Character Card Import
   let isImportingCard = $state(false);
   let cardImportError = $state<string | null>(null);
   let importedCardNpcs = $state<GeneratedCharacter[]>([]);
   let cardImportFileInput: HTMLInputElement | null = null;
-  // Card-imported opening scene data (used in step 7)
   let cardImportedTitle = $state<string | null>(null);
   let cardImportedFirstMessage = $state<string | null>(null);
   let cardImportedAlternateGreetings = $state<string[]>([]);
-  let selectedGreetingIndex = $state<number>(0); // 0 = first_mes, 1+ = alternate greetings
+  let selectedGreetingIndex = $state<number>(0);
 
-  // Scenario Vault integration (Step 4)
+  // Scenario Vault integration
   let showScenarioVaultPicker = $state(false);
   let savedScenarioToVaultConfirm = $state(false);
 
@@ -225,7 +168,7 @@
 
   // Step 7: Generate Opening
   let storyTitle = $state("");
-  let openingGuidance = $state(""); // Creative writing mode: user guidance for opening scene
+  let openingGuidance = $state("");
   let generatedOpening = $state<GeneratedOpening | null>(null);
   let isGeneratingOpening = $state(false);
   let isRefiningOpening = $state(false);
@@ -236,107 +179,22 @@
   // Check if API key is configured
   const needsApiKey = $derived(settings.needsApiKey);
 
-  // Genre options with icons
-  const genres: {
-    id: Genre;
-    name: string;
-    icon: typeof Wand2;
-    description: string;
-  }[] = [
-    {
-      id: "fantasy",
-      name: "Fantasy",
-      icon: Wand2,
-      description: "Magic, quests, and mythical creatures",
-    },
-    {
-      id: "scifi",
-      name: "Sci-Fi",
-      icon: Rocket,
-      description: "Space, technology, and the future",
-    },
-    {
-      id: "modern",
-      name: "Modern",
-      icon: Building,
-      description: "Contemporary realistic settings",
-    },
-    {
-      id: "horror",
-      name: "Horror",
-      icon: Skull,
-      description: "Fear, suspense, and the unknown",
-    },
-    {
-      id: "mystery",
-      name: "Mystery",
-      icon: Search,
-      description: "Puzzles, clues, and investigations",
-    },
-    {
-      id: "romance",
-      name: "Romance",
-      icon: Heart,
-      description: "Love, relationships, and emotion",
-    },
-    {
-      id: "custom",
-      name: "Custom",
-      icon: Sparkles,
-      description: "Define your own genre",
-    },
-  ];
-
-  // POV options
-  const povOptions = $derived.by(
-    (): { id: POV; label: string; example: string }[] => {
-      return [
-        {
-          id: "first",
-          label: "1st Person",
-          example: "I walk into the room...",
-        },
-        {
-          id: "second",
-          label: "2nd Person",
-          example: "You walk into the room...",
-        },
-        {
-          id: "third",
-          label: "3rd Person",
-          example: "They walk into the room...",
-        },
-      ];
-    },
+  // Check if image generation is enabled
+  const imageGenerationEnabled = $derived(
+    settings.systemServicesSettings.imageGeneration.enabled &&
+      !!settings.systemServicesSettings.imageGeneration.nanoGptApiKey,
   );
 
-  // Tense options
-  const tenseOptions: { id: Tense; label: string; example: string }[] = [
-    { id: "present", label: "Present", example: "You see a door." },
-    { id: "past", label: "Past", example: "You saw a door." },
-  ];
-
-  // Tone presets
-  const tonePresets = [
-    "Immersive and engaging",
-    "Dark and atmospheric",
-    "Light and whimsical",
-    "Gritty and realistic",
-    "Poetic and lyrical",
-    "Action-packed and fast-paced",
-  ];
+  // Portrait upload states
+  let isUploadingProtagonistPortrait = $state(false);
+  let uploadingCharacterName = $state<string | null>(null);
 
   // Update default POV and tense when mode changes
-  // Creative writing: third person, past tense (literary standard) - but user can override POV
-  // Adventure: first person, present tense (immersive)
   $effect(() => {
     if (selectedMode === "creative-writing") {
-      // Only set defaults if not already set (allow user to override POV)
       if (selectedPOV === "first" || selectedPOV === "second") {
-        // Keep user's POV choice, only set tense
         selectedTense = "past";
       } else {
-        // First time or was third, set both defaults
         selectedPOV = "third";
         selectedTense = "past";
       }
@@ -350,36 +208,24 @@
   function canProceed(): boolean {
     switch (currentStep) {
       case 1:
-        return true; // Mode always selected
+        return true;
       case 2:
-        return true; // Import is optional (can skip)
+        return true;
       case 3:
         return selectedGenre !== "custom" || customGenre.trim().length > 0;
       case 4:
         return settingSeed.trim().length > 0;
       case 5:
-        return true; // Protagonist is optional
+        return true;
       case 6:
-        return true; // Portraits are optional
+        return true;
       case 7:
-        return true; // Style always has defaults
+        return true;
       case 8:
         return storyTitle.trim().length > 0;
       default:
         return false;
     }
-  }
-
-  // Helper for type counts
-  function getTypeCounts(entries: ImportedEntry[]) {
-    return {
-      character: entries.filter((e) => e.type === "character").length,
-      location: entries.filter((e) => e.type === "location").length,
-      item: entries.filter((e) => e.type === "item").length,
-      faction: entries.filter((e) => e.type === "faction").length,
-      concept: entries.filter((e) => e.type === "concept").length,
-      event: entries.filter((e) => e.type === "event").length,
-    };
   }
 
   // Navigation
@@ -408,12 +254,9 @@
     clearSettingEditState();
   }
 
-  // Step 3: Use setting as-is without AI expansion
   function useSettingAsIs() {
     if (!settingSeed.trim()) return;
-
     clearSettingEditState();
-    // Create a minimal expanded setting from the seed text
     expandedSetting = {
       name: settingSeed.split(".")[0].trim().slice(0, 50) || "Custom Setting",
       description: settingSeed.trim(),
@@ -424,7 +267,6 @@
     };
   }
 
-  // Step 3: Expand Setting with AI
   async function expandSetting(seedOverride?: string) {
     const seed = seedOverride ?? settingSeed;
     if (!seed.trim() || isExpandingSetting) return;
@@ -433,15 +275,12 @@
     settingError = null;
 
     try {
-      // Prepare lorebook entries for setting expansion context
-      // Include ALL entries with full descriptions to avoid hallucinating contradictory details
       const lorebookContext =
         importedEntries.length > 0
           ? importedEntries.map((e) => ({
               name: e.name,
               type: e.type,
               description: e.description,
-              // hiddenInfo not available in SillyTavern imports, but included if present
               hiddenInfo: undefined,
             }))
           : undefined;
@@ -455,7 +294,6 @@
         settingElaborationGuidance.trim() || undefined,
       );
       clearSettingEditState();
-      // Clear guidance after successful expansion
       settingElaborationGuidance = "";
     } catch (error) {
       console.error("Failed to expand setting:", error);
@@ -466,7 +304,6 @@
     }
   }
 
-  // Step 3: Expand Further (refine using current setting details)
   async function expandSettingFurther() {
     if (!expandedSetting || isExpandingSetting) return;
 
@@ -503,7 +340,6 @@
     }
   }
 
-  // Step 3: Edit setting (populate seed with expanded description)
   function editSetting() {
     if (!expandedSetting) return;
     previousExpandedSetting = expandedSetting;
@@ -513,14 +349,12 @@
     expandedSetting = null;
   }
 
-  // Step 4: Select a pre-defined scenario
   function selectScenario(scenarioId: string) {
     const scenario = QUICK_START_SEEDS.find((s) => s.id === scenarioId);
     if (!scenario) return;
 
     selectedScenarioId = scenarioId;
 
-    // Map seed genre to wizard genre
     const genreMap: Record<string, Genre> = {
       Fantasy: "fantasy",
       "Sci-Fi": "scifi",
@@ -540,14 +374,12 @@
       customGenre = scenario.genre;
     }
 
-    // Pre-fill setting from location description
     const locationDesc = scenario.initialState.startingLocation?.description;
     if (locationDesc) {
       settingSeed = locationDesc;
       useSettingAsIs();
     }
 
-    // Pre-fill protagonist data
     const proto = scenario.initialState.protagonist;
     if (proto) {
       manualCharacterName = proto.name ?? "";
@@ -560,33 +392,26 @@
     }
   }
 
-  // Handle infinite carousel scroll - jump to middle when reaching edges
   function handleCarouselScroll() {
     if (!scenarioCarouselRef) return;
 
     const { scrollLeft, scrollWidth, clientWidth } = scenarioCarouselRef;
     const singleSetWidth = scrollWidth / 3;
 
-    // If scrolled near the start (first clone set), jump to middle set
     if (scrollLeft < 20) {
       scenarioCarouselRef.scrollLeft = singleSetWidth + scrollLeft;
-    }
-    // If scrolled near the end (last clone set), jump to middle set
-    else if (scrollLeft + clientWidth >= scrollWidth - 20) {
+    } else if (scrollLeft + clientWidth >= scrollWidth - 20) {
       scenarioCarouselRef.scrollLeft = scrollLeft - singleSetWidth;
     }
   }
 
-  // Initialize carousel to center first item in middle set
   $effect(() => {
     if (scenarioCarouselRef && currentStep === 4) {
-      // Small delay to ensure DOM is ready
       setTimeout(() => {
         if (scenarioCarouselRef) {
           const singleSetWidth = scenarioCarouselRef.scrollWidth / 3;
-          // Scroll to middle set, then offset to center first card
           const containerWidth = scenarioCarouselRef.clientWidth;
-          const firstCardWidth = 150; // approximate card width
+          const firstCardWidth = 150;
           const centerOffset = (containerWidth - firstCardWidth) / 2;
           scenarioCarouselRef.scrollLeft = singleSetWidth - centerOffset;
         }
@@ -594,7 +419,6 @@
     }
   });
 
-  // Step 4: Generate Protagonist
   async function generateProtagonist() {
     if (!expandedSetting || isGeneratingProtagonist) return;
 
@@ -621,7 +445,6 @@
     }
   }
 
-  // Step 4: Use manual character input directly
   function useManualCharacter() {
     if (!manualCharacterName.trim()) return;
 
@@ -640,31 +463,23 @@
     showManualInput = false;
   }
 
-  // Step 4: Select protagonist from vault
   function handleSelectProtagonistFromVault(vaultCharacter: VaultCharacter) {
-    // Populate form fields from vault character
     manualCharacterName = vaultCharacter.name;
     manualCharacterDescription = vaultCharacter.description || "";
     manualCharacterBackground = vaultCharacter.background || "";
     manualCharacterMotivation = vaultCharacter.motivation || "";
     manualCharacterTraits = vaultCharacter.traits.join(", ");
-
-    // Also set portrait data for step 7
     protagonistVisualDescriptors = vaultCharacter.visualDescriptors.join(", ");
     protagonistPortrait = vaultCharacter.portrait;
 
     showProtagonistVaultPicker = false;
     showManualInput = true;
-
-    // Use as-is after selecting from vault
     useManualCharacter();
   }
 
-  // Step 4: Save protagonist to vault
   async function handleSaveProtagonistToVault() {
     if (!manualCharacterName.trim()) return;
 
-    // Ensure vault is loaded
     if (!characterVault.isLoaded) {
       await characterVault.load();
     }
@@ -697,15 +512,12 @@
     setTimeout(() => (savedToVaultConfirm = false), 2000);
   }
 
-  // Step 4: Select supporting character from vault
   function handleSelectSupportingFromVault(vaultCharacter: VaultCharacter) {
     supportingCharacterName = vaultCharacter.name;
     supportingCharacterRole = vaultCharacter.role || "";
     supportingCharacterDescription = vaultCharacter.description || "";
     supportingCharacterRelationship = vaultCharacter.relationshipTemplate || "";
     supportingCharacterTraits = vaultCharacter.traits.join(", ");
-
-    // Visual data for step 7
     supportingCharacterVisualDescriptors[vaultCharacter.name] =
       vaultCharacter.visualDescriptors.join(", ");
     supportingCharacterPortraits[vaultCharacter.name] = vaultCharacter.portrait;
@@ -715,11 +527,9 @@
     useSupportingCharacterAsIs();
   }
 
-  // Step 4: Elaborate on manual character input with AI
   async function elaborateCharacter(useCurrentProtagonist: boolean = false) {
     if (isElaboratingCharacter) return;
 
-    // Determine source of character data
     const sourceName =
       useCurrentProtagonist && protagonist
         ? protagonist.name
@@ -746,7 +556,6 @@
               .filter(Boolean)
           : undefined;
 
-    // Need at least a name or some input
     const hasInput =
       sourceName || sourceDescription || sourceBackground || sourceMotivation;
 
@@ -775,7 +584,6 @@
         characterElaborationGuidance.trim() || undefined,
       );
       showManualInput = false;
-      // Clear guidance after successful elaboration
       characterElaborationGuidance = "";
     } catch (error) {
       console.error("Failed to elaborate character:", error);
@@ -788,7 +596,6 @@
     }
   }
 
-  // Step 4: Elaborate character further (uses current protagonist data with new guidance)
   async function elaborateCharacterFurther() {
     if (!protagonist || isElaboratingCharacter) return;
 
@@ -814,7 +621,6 @@
     }
   }
 
-  // Step 4: Edit the generated character (switch back to manual input)
   function editCharacter() {
     if (protagonist) {
       manualCharacterName = protagonist.name || "";
@@ -827,7 +633,6 @@
     protagonist = null;
   }
 
-  // Step 4: Generate Supporting Characters (Creative Mode)
   async function generateCharacters() {
     if (!expandedSetting || !protagonist || isGeneratingCharacters) return;
 
@@ -849,7 +654,6 @@
     }
   }
 
-  // Supporting character form management
   function openSupportingCharacterForm() {
     editingSupportingCharacterIndex = null;
     supportingCharacterName = "";
@@ -900,7 +704,7 @@
 
     if (editingSupportingCharacterIndex !== null) {
       supportingCharacters[editingSupportingCharacterIndex] = newChar;
-      supportingCharacters = [...supportingCharacters]; // Trigger reactivity
+      supportingCharacters = [...supportingCharacters];
     } else {
       supportingCharacters = [...supportingCharacters, newChar];
     }
@@ -921,13 +725,12 @@
     isElaboratingSupportingCharacter = true;
 
     try {
-      // Use the same elaboration service but for supporting characters
       const elaborated = await scenarioService.elaborateCharacter(
         {
           name: supportingCharacterName.trim() || undefined,
           description: supportingCharacterDescription.trim() || undefined,
-          background: supportingCharacterRelationship.trim() || undefined, // Use relationship as background context
-          motivation: supportingCharacterRole.trim() || undefined, // Use role as motivation context
+          background: supportingCharacterRelationship.trim() || undefined,
+          motivation: supportingCharacterRole.trim() || undefined,
           traits: supportingCharacterTraits.trim()
             ? supportingCharacterTraits
                 .split(",")
@@ -942,7 +745,6 @@
         supportingCharacterGuidance.trim() || undefined,
       );
 
-      // Convert elaborated protagonist format to supporting character format
       const newChar: GeneratedCharacter = {
         name: elaborated.name,
         role: supportingCharacterRole.trim() || "supporting",
@@ -959,7 +761,6 @@
         supportingCharacters = [...supportingCharacters, newChar];
       }
 
-      // Clear guidance after successful elaboration
       supportingCharacterGuidance = "";
       cancelSupportingCharacterForm();
     } catch (error) {
@@ -973,7 +774,7 @@
     supportingCharacters = supportingCharacters.filter((_, i) => i !== index);
   }
 
-  // Step 7: Generate Opening
+  // Opening generation
   async function generateOpeningScene() {
     if (isGeneratingOpening) return;
 
@@ -1002,8 +803,6 @@
           : undefined,
     };
 
-    // Prepare lorebook entries for opening generation context
-    // Include ALL entries with full descriptions to avoid hallucinating contradictory details
     const lorebookContext =
       importedEntries.length > 0
         ? importedEntries.map((e) => ({
@@ -1059,7 +858,6 @@
     clearOpeningEditState();
   }
 
-  // Step 7: Refine Opening
   async function refineOpeningScene() {
     if (!generatedOpening || isRefiningOpening) return;
 
@@ -1119,11 +917,8 @@
 
   // Create Story
   async function createStory() {
-    // Sanity checks
     if (!storyTitle.trim()) return;
 
-    // Allow proceeding if we have a card-imported opening, even if not generated
-    // Construct a generatedOpening object from the card data if needed
     if (!generatedOpening && cardImportedFirstMessage) {
       generatedOpening = {
         scene: cardImportedFirstMessage,
@@ -1140,18 +935,13 @@
       return;
     }
 
-    // Get protagonist name for {{user}} replacement
     const protagonistName = protagonist?.name || "the protagonist";
 
-    // --- Data Pre-processing: Replace {{user}} placeholders ---
-
-    // 1. Setting Seed
     const processedSettingSeed = replaceUserPlaceholders(
       settingSeed,
       protagonistName,
     );
 
-    // 2. Expanded Setting
     let processedExpandedSetting: ExpandedSetting | null = null;
     if (expandedSetting) {
       processedExpandedSetting = {
@@ -1177,13 +967,11 @@
       };
     }
 
-    // 3. Opening Scene
     const processedOpening = {
       ...generatedOpening,
       scene: replaceUserPlaceholders(generatedOpening.scene, protagonistName),
     };
 
-    // 4. Supporting Characters
     const processedCharacters = supportingCharacters.map((char) => ({
       ...char,
       name: replaceUserPlaceholders(char.name, protagonistName),
@@ -1195,8 +983,6 @@
       ),
     }));
 
-    // 5. Imported Lorebook Entries
-    // We map importedEntries to a new array to avoid mutating the source state if user cancels
     const processedEntries = importedEntries.map((e) => ({
       ...e,
       name: replaceUserPlaceholders(e.name, protagonistName),
@@ -1229,13 +1015,11 @@
           : undefined,
     };
 
-    // Prepare story data
     const storyData = scenarioService.prepareStoryData(
       wizardData,
       processedOpening,
     );
 
-    // Add portraits and visual descriptors to protagonist
     if (storyData.protagonist) {
       storyData.protagonist.portrait = protagonistPortrait ?? undefined;
       storyData.protagonist.visualDescriptors = protagonistVisualDescriptors
@@ -1246,7 +1030,6 @@
         : [];
     }
 
-    // Add portraits and visual descriptors to supporting characters (keyed by name)
     storyData.characters = storyData.characters.map((char) => ({
       ...char,
       portrait: char.name
@@ -1261,20 +1044,18 @@
           : [],
     }));
 
-    // Create the story using the store, including any imported entries
     const newStory = await story.createStoryFromWizard({
       ...storyData,
       importedEntries:
         processedEntries.length > 0 ? processedEntries : undefined,
     });
 
-    // Load and navigate to the story
     await story.loadStory(newStory.id);
     ui.setActivePanel("story");
     onClose();
   }
 
-  // Step title
+  // Step titles
   const stepTitles = [
     "Choose Your Mode",
     "Import Lorebook (Optional)",
@@ -1306,7 +1087,6 @@
     portraitError = null;
 
     try {
-      // Get style prompt
       const styleId = imageSettings.styleId;
       let stylePrompt = "";
       try {
@@ -1322,7 +1102,6 @@
           "Soft cel-shaded anime illustration. Muted pastel color palette. Dreamy, airy atmosphere.";
       }
 
-      // Build portrait prompt
       const promptContext = {
         mode: "adventure" as const,
         pov: "second" as const,
@@ -1340,7 +1119,6 @@
         },
       );
 
-      // Generate
       const provider = new NanoGPTImageProvider(imageSettings.nanoGptApiKey);
       const response = await provider.generateImage({
         prompt: portraitPrompt,
@@ -1384,7 +1162,6 @@
     portraitError = null;
 
     try {
-      // Get style prompt
       const styleId = imageSettings.styleId;
       let stylePrompt = "";
       try {
@@ -1400,7 +1177,6 @@
           "Soft cel-shaded anime illustration. Muted pastel color palette. Dreamy, airy atmosphere.";
       }
 
-      // Build portrait prompt
       const promptContext = {
         mode: "adventure" as const,
         pov: "second" as const,
@@ -1418,7 +1194,6 @@
         },
       );
 
-      // Generate
       const provider = new NanoGPTImageProvider(imageSettings.nanoGptApiKey);
       const response = await provider.generateImage({
         prompt: portraitPrompt,
@@ -1433,7 +1208,7 @@
 
       supportingCharacterPortraits[charName] =
         `data:image/png;base64,${response.images[0].b64_json}`;
-      supportingCharacterPortraits = { ...supportingCharacterPortraits }; // Trigger reactivity
+      supportingCharacterPortraits = { ...supportingCharacterPortraits };
     } catch (error) {
       portraitError =
         error instanceof Error ? error.message : "Failed to generate portrait";
@@ -1453,10 +1228,6 @@
     portraitError = null;
   }
 
-  // Portrait upload handlers
-  let isUploadingProtagonistPortrait = $state(false);
-  let uploadingCharacterName = $state<string | null>(null);
-
   async function handleProtagonistPortraitUpload(event: Event) {
     const input = event.target as HTMLInputElement;
     const file = input.files?.[0];
@@ -1466,17 +1237,14 @@
     portraitError = null;
 
     try {
-      // Validate file type
       if (!file.type.startsWith("image/")) {
         throw new Error("Please select an image file");
       }
 
-      // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
         throw new Error("Image must be smaller than 5MB");
       }
 
-      // Convert to base64
       const reader = new FileReader();
       const dataUrl = await new Promise<string>((resolve, reject) => {
         reader.onload = () => {
@@ -1497,7 +1265,6 @@
         error instanceof Error ? error.message : "Failed to upload portrait";
     } finally {
       isUploadingProtagonistPortrait = false;
-      // Reset input
       input.value = "";
     }
   }
@@ -1514,17 +1281,14 @@
     portraitError = null;
 
     try {
-      // Validate file type
       if (!file.type.startsWith("image/")) {
         throw new Error("Please select an image file");
       }
 
-      // Validate file size (max 5MB)
       if (file.size > 5 * 1024 * 1024) {
         throw new Error("Image must be smaller than 5MB");
       }
 
-      // Convert to base64
       const reader = new FileReader();
       const dataUrl = await new Promise<string>((resolve, reject) => {
         reader.onload = () => {
@@ -1540,22 +1304,15 @@
       });
 
       supportingCharacterPortraits[charName] = dataUrl;
-      supportingCharacterPortraits = { ...supportingCharacterPortraits }; // Trigger reactivity
+      supportingCharacterPortraits = { ...supportingCharacterPortraits };
     } catch (error) {
       portraitError =
         error instanceof Error ? error.message : "Failed to upload portrait";
     } finally {
       uploadingCharacterName = null;
-      // Reset input
       input.value = "";
     }
   }
-
-  // Check if image generation is enabled
-  const imageGenerationEnabled = $derived(
-    settings.systemServicesSettings.imageGeneration.enabled &&
-      !!settings.systemServicesSettings.imageGeneration.nanoGptApiKey,
-  );
 
   // Lorebook import functions
   async function handleFileSelect(event: Event) {
@@ -1585,7 +1342,6 @@
 
       let classifiedEntries = result.entries;
 
-      // Run LLM classification if we have entries and an API key is available
       if (result.entries.length > 0 && !settings.needsApiKey) {
         isImporting = false;
         isClassifying = true;
@@ -1601,13 +1357,11 @@
           );
         } catch (classifyError) {
           console.error("LLM classification failed:", classifyError);
-          // Fall back to keyword-based classification on error, handled by default
         } finally {
           isClassifying = false;
         }
       }
 
-      // Add to array - use reassignment instead of .push() to avoid state_unsafe_mutation
       importedLorebooks = [
         ...importedLorebooks,
         {
@@ -1625,7 +1379,6 @@
       isImporting = false;
       isClassifying = false;
     } finally {
-      // Reset input so the same file can be selected again if needed
       if (importFileInput) {
         importFileInput.value = "";
       }
@@ -1637,7 +1390,6 @@
       ...e,
     }));
 
-    // Use reassignment instead of .push() to avoid state_unsafe_mutation error
     importedLorebooks = [
       ...importedLorebooks,
       {
@@ -1690,7 +1442,6 @@
   }
 
   function toggleLorebookExpanded(id: string) {
-    // Use immutable update pattern to avoid state_unsafe_mutation
     importedLorebooks = importedLorebooks.map((lb) =>
       lb.id === id ? { ...lb, expanded: !lb.expanded } : lb,
     );
@@ -1708,12 +1459,10 @@
 
   // Scenario Vault Handler
   function handleSelectScenarioFromVault(scenario: VaultScenario) {
-    // Populate setting seed
     settingSeed = scenario.settingSeed;
-    expandedSetting = null; // Clear expanded setting since we have a new seed
+    expandedSetting = null;
     clearSettingEditState();
 
-    // Add NPCs to supporting characters
     const importedNpcs: GeneratedCharacter[] = scenario.npcs.map((npc) => ({
       name: npc.name,
       role: npc.role,
@@ -1722,7 +1471,6 @@
       traits: npc.traits || [],
     }));
 
-    // Add to supporting characters (replacing any previous imported NPCs)
     if (importedCardNpcs.length > 0) {
       const prevImportedNames = new Set(importedCardNpcs.map((n) => n.name));
       supportingCharacters = supportingCharacters.filter(
@@ -1733,7 +1481,6 @@
     supportingCharacters = [...supportingCharacters, ...importedNpcs];
     importedCardNpcs = importedNpcs;
 
-    // Set opening scene data for step 7
     if (scenario.name) {
       cardImportedTitle = scenario.name;
       storyTitle = scenario.name;
@@ -1755,7 +1502,6 @@
   async function handleSaveScenarioToVault() {
     if (!settingSeed.trim()) return;
 
-    // Ensure vault is loaded
     if (!scenarioVault.isLoaded) {
       await scenarioVault.load();
     }
@@ -1771,7 +1517,6 @@
             traits: c.traits || [],
           }));
 
-    // Convert GeneratedCharacter to VaultScenarioNpc
     const vaultNpcs = npcs.map((c) => ({
       name: c.name,
       role: c.role,
@@ -1806,7 +1551,6 @@
     isImportingCard = true;
 
     try {
-      // Read the file (handles both JSON and PNG formats)
       const content = await readCharacterCardFile(file);
       const result = await convertCardToScenario(
         content,
@@ -1815,31 +1559,24 @@
       );
 
       if (!result.success && result.errors.length > 0) {
-        // Show error but still use fallback if available
         cardImportError = result.errors.join("; ");
       }
 
       if (result.settingSeed) {
-        // Set the setting seed from the card
         settingSeed = result.settingSeed;
-        // Clear any previous expanded setting since we have new content
         expandedSetting = null;
         clearSettingEditState();
-        // Automatically use as-is
         useSettingAsIs();
       }
 
       if (result.npcs && result.npcs.length > 0) {
-        // Add imported NPCs to supporting characters
         supportingCharacters = [...supportingCharacters, ...result.npcs];
-        // Also store reference for display purposes
         importedCardNpcs = result.npcs;
       }
 
-      // Store card-imported opening scene data for step 7
       if (result.storyTitle) {
         cardImportedTitle = result.storyTitle;
-        storyTitle = result.storyTitle; // Pre-fill the story title
+        storyTitle = result.storyTitle;
       }
       if (result.firstMessage) {
         cardImportedFirstMessage = result.firstMessage;
@@ -1847,7 +1584,6 @@
         selectedGreetingIndex = 0;
       }
 
-      // Reset the file input
       if (cardImportFileInput) {
         cardImportFileInput.value = "";
       }
@@ -1860,7 +1596,6 @@
   }
 
   function clearCardImport() {
-    // Remove card-imported NPCs from supporting characters
     if (importedCardNpcs.length > 0) {
       const importedNames = new Set(importedCardNpcs.map((n) => n.name));
       supportingCharacters = supportingCharacters.filter(
@@ -1878,42 +1613,32 @@
     }
   }
 
-  // Get entry type icon color
-  function getTypeColor(type: EntryType): string {
-    switch (type) {
-      case "character":
-        return "text-blue-400";
-      case "location":
-        return "text-green-400";
-      case "item":
-        return "text-yellow-400";
-      case "faction":
-        return "text-purple-400";
-      case "concept":
-        return "text-cyan-400";
-      case "event":
-        return "text-red-400";
-      default:
-        return "text-surface-400";
-    }
+  // Use card opening handler for Step8
+  function useCardOpening() {
+    const selectedScene =
+      selectedGreetingIndex === 0
+        ? cardImportedFirstMessage
+        : cardImportedAlternateGreetings[selectedGreetingIndex - 1];
+    generatedOpening = {
+      title: storyTitle,
+      scene: selectedScene || "",
+      initialLocation: {
+        name:
+          expandedSetting?.keyLocations?.[0]?.name ||
+          "Starting Location",
+        description:
+          expandedSetting?.keyLocations?.[0]?.description ||
+          "The scene begins here.",
+      },
+    };
+    openingError = null;
+    clearOpeningEditState();
   }
 
-  // Check if setting seed contains {{user}} placeholder
-  const hasUserPlaceholder = $derived(settingSeed.includes("{{user}}"));
-
-  // Helper to style {{user}} placeholders in text for display
-  // Returns HTML with {{user}} styled as inline tags
-  function styleUserPlaceholders(text: string): string {
-    return text.replace(
-      /\{\{user\}\}/gi,
-      '<span class="inline-flex items-center px-1.5 py-0.5 mx-0.5 rounded bg-primary-600/30 text-primary-300 text-xs font-mono border border-primary-500/40">{{user}}</span>',
-    );
-  }
-
-  // Helper to replace {{user}} placeholders with actual name
-  function replaceUserPlaceholders(text: string, name: string): string {
-    if (!text) return text;
-    return text.replace(/\{\{user\}\}/gi, name);
+  function clearCardOpening() {
+    cardImportedFirstMessage = null;
+    cardImportedAlternateGreetings = [];
+    selectedGreetingIndex = 0;
   }
 </script>
 
@@ -1984,2011 +1709,197 @@
           </button>
         </div>
       {:else if currentStep === 1}
-        <!-- Step 1: Mode Selection -->
-        <div class="space-y-4">
-          <p class="text-surface-400">
-            How do you want to experience your story?
-          </p>
-          <div class="grid gap-4 sm:grid-cols-2">
-            <button
-              class="card p-6 text-left transition-all hover:border-primary-500/50"
-              class:ring-2={selectedMode === "adventure"}
-              class:ring-primary-500={selectedMode === "adventure"}
-              onclick={() => (selectedMode = "adventure")}
-            >
-              <div class="flex items-center gap-4 mb-3">
-                <div class="rounded-lg bg-primary-900/50 p-3">
-                  <Sword class="h-6 w-6 text-primary-400" />
-                </div>
-                <span class="text-lg font-semibold text-surface-100"
-                  >Adventure Mode</span
-                >
-              </div>
-              <p class="text-sm text-surface-400">
-                <strong>You are the protagonist.</strong> Explore the world, interact
-                with characters, and make choices that shape your story. The AI narrates
-                the consequences of your actions.
-              </p>
-            </button>
-            <button
-              class="card p-6 text-left transition-all hover:border-secondary-500/50"
-              class:ring-2={selectedMode === "creative-writing"}
-              class:ring-secondary-500={selectedMode === "creative-writing"}
-              onclick={() => (selectedMode = "creative-writing")}
-            >
-              <div class="flex items-center gap-4 mb-3">
-                <div class="rounded-lg bg-secondary-900/50 p-3">
-                  <Feather class="h-6 w-6 text-secondary-400" />
-                </div>
-                <span class="text-lg font-semibold text-surface-100"
-                  >Creative Writing</span
-                >
-              </div>
-              <p class="text-sm text-surface-400">
-                <strong>You are the author.</strong> Direct the story and craft the
-                narrative. The AI collaborates with you to write prose following
-                your creative vision.
-              </p>
-            </button>
-          </div>
-        </div>
+        <Step1Mode
+          {selectedMode}
+          onModeChange={(mode) => (selectedMode = mode)}
+        />
       {:else if currentStep === 2}
-        <!-- Step 2: Import Lorebook (Optional) -->
-        <div class="space-y-4">
-          <!-- Vault Picker Modal -->
-          {#if showLorebookVaultPicker}
-            <VaultLorebookPicker
-              onSelect={handleSelectLorebookFromVault}
-              onClose={() => (showLorebookVaultPicker = false)}
-            />
-          {/if}
-
-          <p class="text-surface-400">
-            Import an existing lorebook to populate your world with characters,
-            locations, and lore. This step is optional - you can skip it and add
-            content later.
-          </p>
-
-          <!-- File Upload & Vault Area (always visible unless busy) -->
-          {#if !isImporting && !isClassifying}
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <!-- File Upload -->
-              <div
-                class="card bg-surface-900 border-dashed border-2 border-surface-600 p-6 text-center hover:border-accent-500/50 transition-colors cursor-pointer flex flex-col items-center justify-center min-h-[140px]"
-                onclick={() => importFileInput?.click()}
-                onkeydown={(e) => e.key === "Enter" && importFileInput?.click()}
-                role="button"
-                tabindex="0"
-              >
-                <input
-                  type="file"
-                  accept=".json,application/json,*/*"
-                  class="hidden"
-                  bind:this={importFileInput}
-                  onchange={handleFileSelect}
-                />
-                <Upload class="h-8 w-8 mb-2 text-surface-500" />
-                <p class="text-surface-300 font-medium">
-                  {importedLorebooks.length > 0
-                    ? "Upload Another"
-                    : "Upload Lorebook"}
-                </p>
-                <p class="text-xs text-surface-500 mt-1">
-                  Supports SillyTavern format (.json)
-                </p>
-              </div>
-
-              <!-- Vault Import -->
-              <button
-                class="card bg-surface-900 border-dashed border-2 border-surface-600 p-6 text-center hover:border-accent-500/50 transition-colors cursor-pointer flex flex-col items-center justify-center min-h-[140px]"
-                onclick={() => (showLorebookVaultPicker = true)}
-              >
-                <Archive class="h-8 w-8 mb-2 text-surface-500" />
-                <p class="text-surface-300 font-medium">Add from Vault</p>
-                <p class="text-xs text-surface-500 mt-1">
-                  Use processed lorebooks
-                </p>
-              </button>
-            </div>
-          {:else if isImporting}
-            <div
-              class="card bg-surface-900 border-dashed border-2 border-surface-600 p-8 text-center"
-            >
-              <Loader2
-                class="h-8 w-8 mx-auto mb-2 text-accent-400 animate-spin"
-              />
-              <p class="text-surface-300">Parsing lorebook...</p>
-            </div>
-          {:else if isClassifying}
-            <div
-              class="card bg-surface-900 border-dashed border-2 border-surface-600 p-8 text-center"
-            >
-              <Loader2
-                class="h-8 w-8 mx-auto mb-2 text-accent-400 animate-spin"
-              />
-              <p class="text-surface-300 font-medium">
-                Classifying entries with AI...
-              </p>
-              <p class="text-xs text-surface-500 mt-1">
-                {classificationProgress.current} / {classificationProgress.total}
-                entries
-              </p>
-              <div
-                class="mt-3 w-full max-w-xs mx-auto bg-surface-700 rounded-full h-2"
-              >
-                <div
-                  class="bg-accent-500 h-2 rounded-full transition-all duration-300"
-                  style="width: {classificationProgress.total > 0
-                    ? (classificationProgress.current /
-                        classificationProgress.total) *
-                      100
-                    : 0}%"
-                ></div>
-              </div>
-            </div>
-          {/if}
-
-          {#if importError}
-            <div
-              class="card bg-red-500/10 border-red-500/30 p-3 flex items-start gap-2"
-            >
-              <AlertCircle class="h-4 w-4 text-red-400 shrink-0 mt-0.5" />
-              <p class="text-sm text-red-400">{importError}</p>
-            </div>
-          {/if}
-
-          <!-- List of Imported Lorebooks -->
-          {#if importedLorebooks.length > 0}
-            <div class="space-y-3">
-              {#each importedLorebooks as lorebook (lorebook.id)}
-                <div class="card bg-surface-900 p-4 transition-all">
-                  <!-- Header - Clickable for toggle -->
-                  <div
-                    class="flex items-center justify-between mb-2 cursor-pointer"
-                    onclick={() => toggleLorebookExpanded(lorebook.id)}
-                    role="button"
-                    tabindex="0"
-                    onkeydown={(e) =>
-                      e.key === "Enter" && toggleLorebookExpanded(lorebook.id)}
-                  >
-                    <div class="flex items-center gap-2">
-                      <ChevronRight
-                        class="h-4 w-4 text-surface-500 transition-transform duration-200 {lorebook.expanded
-                          ? 'rotate-90'
-                          : ''}"
-                      />
-                      <FileJson class="h-5 w-5 text-accent-400" />
-                      <span
-                        class="font-medium text-surface-100 truncate max-w-[200px]"
-                        title={lorebook.filename}
-                      >
-                        {lorebook.filename}
-                      </span>
-                      <span class="text-xs text-surface-500">
-                        {lorebook.entries.length} entries
-                      </span>
-                      {#if lorebook.result.warnings.length > 0}
-                        <span
-                          class="text-xs text-amber-400 ml-2"
-                          title="{lorebook.result.warnings.length} warnings"
-                        >
-                          ⚠️
-                        </span>
-                      {/if}
-                    </div>
-                    <div class="flex items-center gap-2 z-10">
-                      {#if !lorebook.filename.includes("(from Vault)")}
-                        <button
-                          class="flex items-center gap-1 text-xs text-surface-400 hover:text-accent-400 transition-colors p-1"
-                          onclick={(e) => {
-                            e.stopPropagation();
-                            handleSaveLorebookToVault(lorebook);
-                          }}
-                          title="Save to Vault for reuse"
-                        >
-                          <Archive class="h-3 w-3" />
-                          <span class="hidden sm:inline">Save</span>
-                        </button>
-                      {/if}
-                      <button
-                        class="text-xs text-surface-400 hover:text-red-400 transition-colors p-1"
-                        onclick={(e) => {
-                          e.stopPropagation();
-                          removeLorebook(lorebook.id);
-                        }}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-
-                  <!-- Type breakdown (Always visible) -->
-                  <div class="flex flex-wrap gap-2 ml-6">
-                    {#each Object.entries(getTypeCounts(lorebook.entries)) as [type, count]}
-                      {#if count > 0}
-                        <span
-                          class="px-2 py-1 rounded-full bg-surface-700 text-xs {getTypeColor(
-                            type as EntryType,
-                          )}"
-                        >
-                          {type}: {count}
-                        </span>
-                      {/if}
-                    {/each}
-                  </div>
-
-                  <!-- Expanded Content -->
-                  {#if lorebook.expanded}
-                    <div
-                      class="mt-4 pt-4 border-t border-surface-700 space-y-4 ml-6"
-                      transition:slide
-                    >
-                      <!-- Preview (first 10) -->
-                      <div class="space-y-2">
-                        <h4
-                          class="text-xs font-medium text-surface-400 uppercase"
-                        >
-                          Preview (first 10)
-                        </h4>
-                        <div class="max-h-40 overflow-y-auto space-y-1">
-                          {#each lorebook.entries.slice(0, 10) as entry}
-                            <div
-                              class="flex items-center gap-2 text-sm p-2 rounded bg-surface-800"
-                            >
-                              <span
-                                class="px-1.5 py-0.5 rounded text-xs {getTypeColor(
-                                  entry.type,
-                                )} bg-surface-700"
-                              >
-                                {entry.type}
-                              </span>
-                              <span class="text-surface-200 truncate flex-1"
-                                >{entry.name}</span
-                              >
-                              {#if entry.keywords.length > 0}
-                                <span class="text-xs text-surface-500"
-                                  >{entry.keywords.length} keywords</span
-                                >
-                              {/if}
-                            </div>
-                          {/each}
-                          {#if lorebook.entries.length > 10}
-                            <p
-                              class="text-xs text-surface-500 text-center py-2"
-                            >
-                              ...and {lorebook.entries.length - 10} more entries
-                            </p>
-                          {/if}
-                        </div>
-                      </div>
-
-                      {#if lorebook.result.warnings.length > 0}
-                        <div class="text-xs text-amber-400">
-                          {lorebook.result.warnings.length} warning(s) during import
-                        </div>
-                      {/if}
-                    </div>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-
-            <!-- Combined Summary -->
-            {#if importedLorebooks.length > 1 && importSummary}
-              <div class="card bg-surface-800 p-3">
-                <div class="flex justify-between items-center">
-                  <p class="text-sm text-surface-300">
-                    <strong>Total:</strong>
-                    {importSummary.total} entries across {importedLorebooks.length}
-                    lorebooks
-                  </p>
-                  <button
-                    class="text-xs text-surface-400 hover:text-surface-200"
-                    onclick={clearAllLorebooks}
-                  >
-                    Clear All
-                  </button>
-                </div>
-              </div>
-            {/if}
-          {/if}
-
-          <p class="text-xs text-surface-500 text-center">
-            Imported entries will be added to your story's lorebook after
-            creation.
-          </p>
-        </div>
+        <Step2Lorebook
+          {importedLorebooks}
+          {isImporting}
+          {isClassifying}
+          {classificationProgress}
+          {importError}
+          {showLorebookVaultPicker}
+          onShowVaultPickerChange={(show) => (showLorebookVaultPicker = show)}
+          onFileSelect={handleFileSelect}
+          onSelectFromVault={handleSelectLorebookFromVault}
+          onSaveToVault={handleSaveLorebookToVault}
+          onRemoveLorebook={removeLorebook}
+          onToggleExpanded={toggleLorebookExpanded}
+          onClearAll={clearAllLorebooks}
+          importFileInputRef={(el) => (importFileInput = el)}
+        />
       {:else if currentStep === 3}
-        <!-- Step 3: Genre Selection -->
-        <div class="space-y-4">
-          <p class="text-surface-400">
-            What kind of story do you want to tell?
-          </p>
-          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {#each genres as genre}
-              {@const Icon = genre.icon}
-              <button
-                class="card p-4 text-left transition-all hover:border-accent-500/50"
-                class:ring-2={selectedGenre === genre.id}
-                class:ring-accent-500={selectedGenre === genre.id}
-                onclick={() => (selectedGenre = genre.id)}
-              >
-                <div class="flex items-center gap-3 mb-2">
-                  <div class="rounded-lg bg-surface-700 p-2">
-                    <Icon class="h-5 w-5 text-accent-400" />
-                  </div>
-                  <span class="font-medium text-surface-100">{genre.name}</span>
-                </div>
-                <p class="text-xs text-surface-400">{genre.description}</p>
-              </button>
-            {/each}
-          </div>
-          {#if selectedGenre === "custom"}
-            <div class="mt-4">
-              <label class="mb-2 block text-sm font-medium text-surface-300">
-                Describe your genre
-              </label>
-              <input
-                type="text"
-                bind:value={customGenre}
-                placeholder="e.g., Steampunk Western, Cosmic Horror, Slice-of-Life Fantasy..."
-                class="input"
-              />
-            </div>
-          {/if}
-        </div>
+        <Step3Genre
+          {selectedGenre}
+          {customGenre}
+          onGenreChange={(g) => (selectedGenre = g)}
+          onCustomGenreChange={(v) => (customGenre = v)}
+        />
       {:else if currentStep === 4}
-        <!-- Step 4: Setting -->
-        <div class="space-y-4 overflow-x-hidden">
-          <!-- Vault Picker Modal -->
-          {#if showScenarioVaultPicker}
-            <VaultScenarioPicker
-              onSelect={handleSelectScenarioFromVault}
-              onClose={() => (showScenarioVaultPicker = false)}
-            />
-          {/if}
-
-          <!-- Starter Scenarios -->
-          <div>
-            <p class="text-xs text-surface-500 mb-2">
-              Tap a starter scenario or write your own below
-            </p>
-
-            <!-- Desktop Grid (3 columns) -->
-            <div class="hidden sm:grid sm:gap-2 sm:grid-cols-3">
-              {#each QUICK_START_SEEDS as seed (seed.id)}
-                {@const Icon = templateIcons[seed.id] ?? Sparkles}
-                <button
-                  onclick={() => selectScenario(seed.id)}
-                  class="card flex items-center gap-2 px-3 py-2 text-left transition-all hover:border-accent-500/50 hover:bg-surface-700/50 {selectedScenarioId ===
-                  seed.id
-                    ? 'border-accent-500 bg-accent-500/10'
-                    : ''}"
-                >
-                  <Icon class="h-4 w-4 text-accent-400 shrink-0" />
-                  <span class="font-medium text-surface-100 text-sm truncate"
-                    >{seed.name}</span
-                  >
-                </button>
-              {/each}
-            </div>
-
-            <!-- Mobile Carousel (infinite scroll, centered on first item) -->
-            <div class="sm:hidden relative">
-              <!-- Fade edges -->
-              <div
-                class="pointer-events-none absolute left-0 top-0 bottom-0 w-4 bg-gradient-to-r from-surface-800 to-transparent z-10"
-              ></div>
-              <div
-                class="pointer-events-none absolute right-0 top-0 bottom-0 w-4 bg-gradient-to-l from-surface-800 to-transparent z-10"
-              ></div>
-
-              <!-- Scrollable container with tripled items for infinite effect -->
-              <div
-                bind:this={scenarioCarouselRef}
-                onscroll={handleCarouselScroll}
-                class="flex gap-2 overflow-x-auto py-1 scrollbar-hide"
-              >
-                <!-- First copy (for seamless loop) -->
-                {#each QUICK_START_SEEDS as seed (seed.id + "-pre")}
-                  {@const Icon = templateIcons[seed.id] ?? Sparkles}
-                  <button
-                    onclick={() => selectScenario(seed.id)}
-                    class="card flex items-center gap-2 px-3 py-2 text-left transition-all hover:border-accent-500/50 hover:bg-surface-700/50 shrink-0 {selectedScenarioId ===
-                    seed.id
-                      ? 'border-accent-500 bg-accent-500/10'
-                      : ''}"
-                  >
-                    <Icon class="h-4 w-4 text-accent-400 shrink-0" />
-                    <span
-                      class="font-medium text-surface-100 text-sm whitespace-nowrap"
-                      >{seed.name}</span
-                    >
-                  </button>
-                {/each}
-                <!-- Original items (middle set) -->
-                {#each QUICK_START_SEEDS as seed (seed.id)}
-                  {@const Icon = templateIcons[seed.id] ?? Sparkles}
-                  <button
-                    onclick={() => selectScenario(seed.id)}
-                    class="card flex items-center gap-2 px-3 py-2 text-left transition-all hover:border-accent-500/50 hover:bg-surface-700/50 shrink-0 {selectedScenarioId ===
-                    seed.id
-                      ? 'border-accent-500 bg-accent-500/10'
-                      : ''}"
-                  >
-                    <Icon class="h-4 w-4 text-accent-400 shrink-0" />
-                    <span
-                      class="font-medium text-surface-100 text-sm whitespace-nowrap"
-                      >{seed.name}</span
-                    >
-                  </button>
-                {/each}
-                <!-- Last copy (for seamless loop) -->
-                {#each QUICK_START_SEEDS as seed (seed.id + "-post")}
-                  {@const Icon = templateIcons[seed.id] ?? Sparkles}
-                  <button
-                    onclick={() => selectScenario(seed.id)}
-                    class="card flex items-center gap-2 px-3 py-2 text-left transition-all hover:border-accent-500/50 hover:bg-surface-700/50 shrink-0 {selectedScenarioId ===
-                    seed.id
-                      ? 'border-accent-500 bg-accent-500/10'
-                      : ''}"
-                  >
-                    <Icon class="h-4 w-4 text-accent-400 shrink-0" />
-                    <span
-                      class="font-medium text-surface-100 text-sm whitespace-nowrap"
-                      >{seed.name}</span
-                    >
-                  </button>
-                {/each}
-              </div>
-            </div>
-          </div>
-
-          <p class="text-surface-400">
-            Describe your world in a few sentences. The AI will expand it into a
-            rich setting.
-          </p>
-
-          <!-- Import Options Row -->
-          <div class="flex gap-2 sm:grid sm:grid-cols-3 sm:gap-3">
-            <!-- Import Character Card -->
-            <button
-              class="flex-1 sm:flex-none card bg-surface-900 border-dashed border-2 border-surface-600 p-2 sm:p-4 text-center hover:border-accent-500/50 transition-colors cursor-pointer flex flex-col items-center justify-center min-h-[70px] sm:min-h-[100px]"
-              onclick={() => cardImportFileInput?.click()}
-            >
-              <input
-                type="file"
-                accept=".json,.png"
-                class="hidden"
-                bind:this={cardImportFileInput}
-                onchange={handleCardImport}
-              />
-              {#if isImportingCard}
-                <Loader2
-                  class="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2 text-surface-500 animate-spin"
-                />
-                <p class="text-surface-300 text-xs sm:text-sm font-medium">
-                  Converting...
-                </p>
-              {:else}
-                <Upload
-                  class="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2 text-surface-500"
-                />
-                <p class="text-surface-300 text-xs sm:text-sm font-medium">
-                  Import Card
-                </p>
-                <p
-                  class="text-[10px] sm:text-xs text-surface-500 hidden sm:block"
-                >
-                  JSON or PNG
-                </p>
-              {/if}
-            </button>
-
-            <!-- Load from Vault -->
-            <button
-              class="flex-1 sm:flex-none card bg-surface-900 border-dashed border-2 border-surface-600 p-2 sm:p-4 text-center hover:border-accent-500/50 transition-colors cursor-pointer flex flex-col items-center justify-center min-h-[70px] sm:min-h-[100px]"
-              onclick={() => (showScenarioVaultPicker = true)}
-            >
-              <Archive
-                class="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2 text-surface-500"
-              />
-              <p class="text-surface-300 text-xs sm:text-sm font-medium">
-                Load Vault
-              </p>
-              <p
-                class="text-[10px] sm:text-xs text-surface-500 hidden sm:block"
-              >
-                Saved scenarios
-              </p>
-            </button>
-
-            <!-- Save to Vault (always visible, disabled when no content) -->
-            <button
-              class="flex-1 sm:flex-none card bg-surface-900 border-dashed border-2 border-surface-600 p-2 sm:p-4 text-center transition-colors flex flex-col items-center justify-center min-h-[70px] sm:min-h-[100px] {savedScenarioToVaultConfirm
-                ? 'border-green-500/50 bg-green-500/10'
-                : ''} {settingSeed.trim()
-                ? 'hover:border-green-500/50 cursor-pointer'
-                : 'opacity-50 cursor-not-allowed'}"
-              onclick={handleSaveScenarioToVault}
-              disabled={!settingSeed.trim() || savedScenarioToVaultConfirm}
-            >
-              {#if savedScenarioToVaultConfirm}
-                <Check
-                  class="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2 text-green-400"
-                />
-                <p class="text-green-300 text-xs sm:text-sm font-medium">
-                  Saved!
-                </p>
-              {:else}
-                <Archive
-                  class="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2 text-surface-500"
-                />
-                <p class="text-surface-300 text-xs sm:text-sm font-medium">
-                  Save Vault
-                </p>
-                <p
-                  class="text-[10px] sm:text-xs text-surface-500 hidden sm:block"
-                >
-                  For later use
-                </p>
-              {/if}
-            </button>
-          </div>
-
-          <!-- Import Status / Error -->
-          {#if importedCardNpcs.length > 0}
-            <div
-              class="flex items-center justify-between bg-surface-800/50 p-2 rounded text-xs"
-            >
-              <span class="text-green-400 flex items-center gap-1">
-                <Check class="h-3 w-3" />
-                Imported: {importedCardNpcs.map((n) => n.name).join(", ")}
-              </span>
-              <button
-                class="text-surface-400 hover:text-surface-200"
-                onclick={clearCardImport}
-              >
-                Clear
-              </button>
-            </div>
-          {/if}
-          {#if cardImportError}
-            <p class="text-xs text-red-400 text-center">{cardImportError}</p>
-          {/if}
-
-          <div>
-            <label class="mb-2 block text-sm font-medium text-surface-300">
-              Setting Seed
-            </label>
-            <textarea
-              bind:value={settingSeed}
-              placeholder="e.g., A kingdom where music is magic, and bards are the most powerful beings. An ancient evil stirs in the Silent Lands, where no song has been heard for a thousand years..."
-              class="input min-h-[100px] resize-none"
-              rows="4"
-            ></textarea>
-            {#if hasUserPlaceholder}
-              <p class="text-xs text-surface-500 mt-1 flex items-center gap-1">
-                <span
-                  class="inline-flex items-center px-1 py-0.5 rounded bg-primary-600/30 text-primary-300 text-[10px] font-mono border border-primary-500/40"
-                  >{"{{user}}"}</span
-                >
-                will be replaced with your character's name from Step 5
-              </p>
-            {/if}
-          </div>
-
-          <!-- Elaboration Guidance (visible before expansion) -->
-          {#if !expandedSetting}
-            <div>
-              <label class="mb-1 block text-xs font-medium text-surface-400">
-                Elaboration guidance (optional)
-              </label>
-              <textarea
-                bind:value={settingElaborationGuidance}
-                placeholder="e.g., Focus on dark gothic atmosphere, add steampunk elements, make the magic system more complex..."
-                class="input min-h-[60px] resize-none text-sm"
-                rows="2"
-              ></textarea>
-            </div>
-          {/if}
-
-          {#if !expandedSetting}
-            <div class="flex flex-wrap gap-2">
-              <button
-                class="btn btn-secondary flex items-center gap-2"
-                onclick={useSettingAsIs}
-                disabled={!settingSeed.trim()}
-              >
-                <Check class="h-4 w-4" />
-                Use As-Is
-              </button>
-              <button
-                class="btn btn-primary flex items-center gap-2"
-                onclick={() => expandSetting()}
-                disabled={isExpandingSetting || !settingSeed.trim()}
-              >
-                {#if isExpandingSetting}
-                  <Loader2 class="h-4 w-4 animate-spin" />
-                  Expanding...
-                {:else}
-                  <Sparkles class="h-4 w-4" />
-                  Expand with AI
-                {/if}
-              </button>
-              {#if isEditingSetting}
-                <button
-                  class="btn btn-secondary flex items-center gap-2"
-                  onclick={cancelSettingEdit}
-                  title="Restore the previous expanded setting"
-                >
-                  <X class="h-4 w-4" />
-                  Cancel Edit
-                </button>
-              {/if}
-            </div>
-          {/if}
-
-          {#if settingError}
-            <p class="text-sm text-red-400">{settingError}</p>
-          {/if}
-
-          {#if expandedSetting}
-            <div
-              class="card bg-surface-900 px-4 py-3 sm:pt-3 sm:pb-3 space-y-2 sm:space-y-1"
-            >
-              <div class="flex gap-3 sm:mb-2">
-                <p class="text-sm">Selected Setting</p>
-                <div class="flex-1"></div>
-                <button
-                  class="flex items-center gap-1.5 text-xs font-medium text-surface-400 hover:text-surface-100 transition-colors"
-                  onclick={editSetting}
-                  title="Edit the expanded description"
-                >
-                  <PenTool class="h-3 w-3" />
-                  <span>Edit</span>
-                </button>
-                <button
-                  class="flex items-center gap-1.5 text-xs font-medium text-accent-400 hover:text-accent-300 transition-colors"
-                  onclick={expandSettingFurther}
-                  disabled={isExpandingSetting}
-                  title="Refine using the current setting details"
-                >
-                  <Sparkles
-                    class="h-3 w-3 {isExpandingSetting ? 'animate-pulse' : ''}"
-                  />
-                  <span>{isExpandingSetting ? "Refining..." : "Refine"}</span>
-                </button>
-              </div>
-              <p class="text-sm text-surface-300 whitespace-pre-wrap">
-                {expandedSetting.description}
-              </p>
-
-              {#if expandedSetting.keyLocations.length > 0}
-                <div>
-                  <h4
-                    class="text-xs font-medium text-surface-400 uppercase mb-1"
-                  >
-                    Key Locations
-                  </h4>
-                  <ul class="text-sm text-surface-300 space-y-1">
-                    {#each expandedSetting.keyLocations as location}
-                      <li>
-                        <strong>{location.name}:</strong>
-                        {location.description}
-                      </li>
-                    {/each}
-                  </ul>
-                </div>
-              {/if}
-
-              <div class="flex flex-wrap gap-2">
-                {#each expandedSetting.themes as theme}
-                  <span
-                    class="px-2 py-0.5 rounded-full bg-surface-700 text-xs text-surface-300"
-                    >{theme}</span
-                  >
-                {/each}
-              </div>
-
-              <!-- Guidance field for iterative refinement -->
-              <div class="pt-2 border-t border-surface-700">
-                <label class="mb-1 block text-xs font-medium text-surface-400">
-                  Refinement guidance (optional)
-                </label>
-                <textarea
-                  bind:value={settingElaborationGuidance}
-                  placeholder="e.g., Add more detail about the magic system, make the atmosphere darker..."
-                  class="input min-h-[50px] resize-none text-sm"
-                  rows="2"
-                ></textarea>
-              </div>
-            </div>
-          {/if}
-        </div>
+        <Step4Setting
+          {settingSeed}
+          {expandedSetting}
+          {settingElaborationGuidance}
+          {isExpandingSetting}
+          {settingError}
+          {isEditingSetting}
+          {selectedScenarioId}
+          {importedCardNpcs}
+          {cardImportError}
+          {isImportingCard}
+          {savedScenarioToVaultConfirm}
+          {showScenarioVaultPicker}
+          onSettingSeedChange={(v) => (settingSeed = v)}
+          onGuidanceChange={(v) => (settingElaborationGuidance = v)}
+          onUseAsIs={useSettingAsIs}
+          onExpandSetting={() => expandSetting()}
+          onExpandFurther={expandSettingFurther}
+          onEditSetting={editSetting}
+          onCancelEdit={cancelSettingEdit}
+          onSelectScenario={selectScenario}
+          onCardImport={handleCardImport}
+          onClearCardImport={clearCardImport}
+          onSaveToVault={handleSaveScenarioToVault}
+          onShowVaultPickerChange={(show) => (showScenarioVaultPicker = show)}
+          onSelectFromVault={handleSelectScenarioFromVault}
+          cardImportFileInputRef={(el) => (cardImportFileInput = el)}
+          scenarioCarouselRef={(el) => (scenarioCarouselRef = el)}
+          onCarouselScroll={handleCarouselScroll}
+        />
       {:else if currentStep === 5}
-        <!-- Step 5: Protagonist/Characters -->
-        <div class="space-y-4">
-          <!-- Vault Picker Modals -->
-          {#if showProtagonistVaultPicker}
-            <VaultCharacterPicker
-              filterType="protagonist"
-              onSelect={handleSelectProtagonistFromVault}
-              onClose={() => (showProtagonistVaultPicker = false)}
-            />
-          {/if}
-
-          {#if showSupportingVaultPicker}
-            <VaultCharacterPicker
-              filterType="supporting"
-              onSelect={handleSelectSupportingFromVault}
-              onClose={() => (showSupportingVaultPicker = false)}
-            />
-          {/if}
-          {#if !expandedSetting}
-            <div class="card bg-amber-500/10 border-amber-500/30 p-4">
-              <p class="text-sm text-amber-400">
-                Go back to Step 4 and expand your setting first. This helps
-                create a more fitting character.
-              </p>
-            </div>
-          {:else}
-            <!-- Protagonist Section -->
-            <div class="space-y-3">
-              <div class="flex items-center justify-between">
-                <div>
-                  <p class="text-surface-400 mb-3">
-                    {selectedMode === "adventure"
-                      ? "Create your character for this adventure."
-                      : "Define the main characters for your story."}
-                  </p>
-                  <h3 class="font-medium text-surface-100">
-                    {selectedMode === "adventure"
-                      ? "Your Character"
-                      : "Main Character"}
-                  </h3>
-                </div>
-                <button
-                  class="btn btn-secondary btn-sm flex items-center gap-1.5 self-start sm:self-end mt-1 sm:mt-0"
-                  onclick={() => (showProtagonistVaultPicker = true)}
-                  title="Select a character from your vault"
-                >
-                  <Archive class="h-3 w-3" />
-                  <span class="sm:hidden">Vault</span>
-                  <span class="hidden sm:inline">Use from Vault</span>
-                </button>
-              </div>
-
-              {#if protagonistError}
-                <p class="text-sm text-red-400">{protagonistError}</p>
-              {/if}
-
-              {#if showManualInput && !protagonist}
-                <!-- Manual Character Input Form -->
-                <div class="card bg-surface-900 p-4 space-y-4">
-                  <div class="flex items-center justify-between">
-                    <p class="text-sm text-surface-400">
-                      Enter your character details below. You can use them
-                      as-is, have AI elaborate on them, or generate a completely
-                      new character.
-                    </p>
-                  </div>
-
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-surface-400"
-                      >Character Name</label
-                    >
-                    <input
-                      type="text"
-                      bind:value={manualCharacterName}
-                      placeholder="e.g., Alex, Jordan, Sam..."
-                      class="input"
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-surface-400"
-                      >Description</label
-                    >
-                    <textarea
-                      bind:value={manualCharacterDescription}
-                      placeholder="Physical appearance, demeanor, notable features..."
-                      class="input min-h-[60px] resize-none"
-                      rows="2"
-                    ></textarea>
-                  </div>
-
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-surface-400"
-                      >Background</label
-                    >
-                    <textarea
-                      bind:value={manualCharacterBackground}
-                      placeholder="Where they come from, their history..."
-                      class="input min-h-[60px] resize-none"
-                      rows="2"
-                    ></textarea>
-                  </div>
-
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-surface-400"
-                      >Motivation</label
-                    >
-                    <input
-                      type="text"
-                      bind:value={manualCharacterMotivation}
-                      placeholder="What drives them? What do they seek?"
-                      class="input"
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-surface-400"
-                      >Traits (comma-separated)</label
-                    >
-                    <input
-                      type="text"
-                      bind:value={manualCharacterTraits}
-                      placeholder="e.g., brave, curious, stubborn, compassionate..."
-                      class="input"
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-surface-400"
-                      >Elaboration guidance (optional)</label
-                    >
-                    <textarea
-                      bind:value={characterElaborationGuidance}
-                      placeholder="e.g., Make them more cynical and world-weary, add a tragic backstory..."
-                      class="input min-h-[50px] resize-none text-sm"
-                      rows="2"
-                    ></textarea>
-                  </div>
-
-                  <div
-                    class="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 pt-2 border-t border-surface-700"
-                  >
-                    <button
-                      class="btn btn-secondary btn-sm flex items-center justify-center gap-2"
-                      onclick={useManualCharacter}
-                      disabled={!manualCharacterName.trim()}
-                      title="Use character as entered"
-                    >
-                      <User class="h-3 w-3" />
-                      <span>Use As-Is</span>
-                    </button>
-                    <button
-                      class="btn btn-primary btn-sm flex items-center justify-center gap-2"
-                      onclick={() => elaborateCharacter()}
-                      disabled={isElaboratingCharacter ||
-                        (!manualCharacterName.trim() &&
-                          !manualCharacterDescription.trim() &&
-                          !manualCharacterBackground.trim())}
-                      title="Have AI expand on your character details"
-                    >
-                      {#if isElaboratingCharacter}
-                        <Loader2 class="h-3 w-3 animate-spin" />
-                        <span>Elaborating...</span>
-                      {:else}
-                        <Sparkles class="h-3 w-3" />
-                        <span class="sm:hidden">Elaborate</span>
-                        <span class="hidden sm:inline">Elaborate with AI</span>
-                      {/if}
-                    </button>
-                    <button
-                      class="btn btn-secondary btn-sm flex items-center justify-center gap-2"
-                      onclick={generateProtagonist}
-                      disabled={isGeneratingProtagonist}
-                      title="Generate a completely new character from scratch"
-                    >
-                      {#if isGeneratingProtagonist}
-                        <RefreshCw class="h-3 w-3 animate-spin" />
-                        <span>Generating...</span>
-                      {:else}
-                        <RefreshCw class="h-3 w-3" />
-                        <span class="sm:hidden">Generate</span>
-                        <span class="hidden sm:inline">Generate New</span>
-                      {/if}
-                    </button>
-                    <button
-                      class="btn btn-secondary btn-sm flex items-center justify-center gap-2 sm:ml-auto"
-                      onclick={handleSaveProtagonistToVault}
-                      disabled={!manualCharacterName.trim()}
-                      title="Save this character to your vault for reuse"
-                    >
-                      <Archive class="h-3 w-3" />
-                      <span class="hidden sm:inline"
-                        >{savedToVaultConfirm
-                          ? "Saved!"
-                          : "Save to Vault"}</span
-                      >
-                      <span class="sm:hidden"
-                        >{savedToVaultConfirm ? "Saved" : "Save"}</span
-                      >
-                    </button>
-                  </div>
-                </div>
-              {:else if protagonist}
-                <!-- Generated/Final Character Display -->
-                <div class="card bg-surface-900 p-4 space-y-2">
-                  <div class="flex items-center justify-between gap-2">
-                    <h4 class="font-semibold text-surface-100 truncate">
-                      {protagonist.name}
-                    </h4>
-                    <div class="flex items-center gap-3 shrink-0">
-                      <button
-                        class="flex items-center gap-1.5 text-xs font-medium text-surface-400 hover:text-surface-100 transition-colors"
-                        onclick={editCharacter}
-                        title="Edit character details"
-                      >
-                        <PenTool class="h-3 w-3" />
-                        <span>Edit</span>
-                      </button>
-                      <button
-                        class="flex items-center gap-1.5 text-xs font-medium text-accent-400 hover:text-accent-300 transition-colors"
-                        onclick={elaborateCharacterFurther}
-                        disabled={isElaboratingCharacter}
-                        title="Re-elaborate with new guidance"
-                      >
-                        <Sparkles
-                          class="h-3 w-3 {isElaboratingCharacter
-                            ? 'animate-pulse'
-                            : ''}"
-                        />
-                        <span
-                          >{isElaboratingCharacter
-                            ? "Refining..."
-                            : "Refine"}</span
-                        >
-                      </button>
-                    </div>
-                  </div>
-                  <p class="text-sm text-surface-300">
-                    {protagonist.description}
-                  </p>
-                  {#if protagonist.background}
-                    <p class="text-sm text-surface-400">
-                      <strong>Background:</strong>
-                      {protagonist.background}
-                    </p>
-                  {/if}
-                  {#if protagonist.motivation}
-                    <p class="text-sm text-surface-400">
-                      <strong>Motivation:</strong>
-                      {protagonist.motivation}
-                    </p>
-                  {/if}
-                  {#if protagonist.traits && protagonist.traits.length > 0}
-                    <div class="flex flex-wrap gap-2">
-                      {#each protagonist.traits as trait}
-                        <span
-                          class="px-2 py-1 rounded-md bg-primary-500/20 text-xs text-primary-300 border border-primary-500/30"
-                          >{trait}</span
-                        >
-                      {/each}
-                    </div>
-                  {/if}
-
-                  <!-- Guidance field for iterative refinement -->
-                  <div class="pt-2 border-t border-surface-700">
-                    <label
-                      class="mb-1 block text-xs font-medium text-surface-400"
-                    >
-                      Refinement guidance (optional)
-                    </label>
-                    <textarea
-                      bind:value={characterElaborationGuidance}
-                      placeholder="e.g., Add internal conflict, make them more mysterious..."
-                      class="input min-h-[50px] resize-none text-sm"
-                      rows="2"
-                    ></textarea>
-                  </div>
-                </div>
-              {:else}
-                <!-- Fallback: Show generate button -->
-                <div
-                  class="card bg-surface-900 border-dashed border-2 border-surface-600 p-6 text-center"
-                >
-                  <p class="text-surface-400 mb-3">
-                    Enter your own character details or generate one with AI
-                  </p>
-                  <div class="grid grid-cols-1 sm:flex sm:justify-center gap-2">
-                    <button
-                      class="btn btn-secondary btn-sm justify-center"
-                      onclick={() => (showManualInput = true)}
-                    >
-                      Enter Manually
-                    </button>
-                    <button
-                      class="btn btn-primary btn-sm flex items-center justify-center gap-1"
-                      onclick={generateProtagonist}
-                      disabled={isGeneratingProtagonist}
-                    >
-                      {#if isGeneratingProtagonist}
-                        <Loader2 class="h-3 w-3 animate-spin" />
-                      {:else}
-                        <Sparkles class="h-3 w-3" />
-                      {/if}
-                      Generate Character
-                    </button>
-                  </div>
-                </div>
-              {/if}
-            </div>
-
-            <!-- Hint when no protagonist is defined -->
-            {#if !protagonist && !showManualInput}
-              <p class="text-xs text-surface-500 italic">
-                Tip: While optional, having a protagonist helps the AI create
-                more personalized story content.
-              </p>
-            {/if}
-
-            <!-- Supporting Characters -->
-            <div class="space-y-3 pt-4 border-t border-surface-700">
-              <div
-                class="flex flex-col sm:flex-row sm:items-center justify-between gap-3"
-              >
-                <h3 class="font-medium text-surface-100">Supporting Cast</h3>
-                <div class="grid grid-cols-3 sm:flex gap-2 w-full sm:w-auto">
-                  <button
-                    class="btn btn-secondary btn-sm flex items-center justify-center gap-1"
-                    onclick={() => (showSupportingVaultPicker = true)}
-                    disabled={showSupportingCharacterForm}
-                    title="Select from vault"
-                  >
-                    <Archive class="h-3 w-3" />
-                    <span>Vault</span>
-                  </button>
-                  <button
-                    class="btn btn-secondary btn-sm flex items-center justify-center gap-1"
-                    onclick={openSupportingCharacterForm}
-                    disabled={showSupportingCharacterForm}
-                  >
-                    <Plus class="h-3 w-3" />
-                    <span>Add</span>
-                  </button>
-                  <button
-                    class="btn btn-secondary btn-sm flex items-center justify-center gap-1"
-                    onclick={generateCharacters}
-                    disabled={isGeneratingCharacters || !protagonist}
-                    title="Generate 3 AI characters at once"
-                  >
-                    {#if isGeneratingCharacters}
-                      <Loader2 class="h-3 w-3 animate-spin" />
-                      <span class="hidden sm:inline">Generating...</span>
-                    {:else}
-                      <Sparkles class="h-3 w-3" />
-                      <span class="sm:hidden">Gen 3</span>
-                      <span class="hidden sm:inline">Generate 3</span>
-                    {/if}
-                  </button>
-                </div>
-              </div>
-
-              <!-- Supporting Character Form -->
-              {#if showSupportingCharacterForm}
-                <div class="card bg-surface-900 p-4 space-y-4">
-                  <p class="text-sm text-surface-400">
-                    {editingSupportingCharacterIndex !== null ? "Edit" : "Add"} a
-                    supporting character. You can use them as-is or have AI elaborate
-                    on them.
-                  </p>
-
-                  <div class="grid grid-cols-2 gap-3">
-                    <div>
-                      <label
-                        class="mb-1 block text-xs font-medium text-surface-400"
-                        >Name</label
-                      >
-                      <input
-                        type="text"
-                        bind:value={supportingCharacterName}
-                        placeholder="e.g., Lady Vivienne"
-                        class="input"
-                      />
-                    </div>
-                    <div>
-                      <label
-                        class="mb-1 block text-xs font-medium text-surface-400"
-                        >Role</label
-                      >
-                      <input
-                        type="text"
-                        bind:value={supportingCharacterRole}
-                        placeholder="e.g., ally, antagonist, mentor..."
-                        class="input"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-surface-400"
-                      >Description</label
-                    >
-                    <textarea
-                      bind:value={supportingCharacterDescription}
-                      placeholder="Physical appearance, personality, notable features..."
-                      class="input min-h-[60px] resize-none"
-                      rows="2"
-                    ></textarea>
-                  </div>
-
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-surface-400"
-                      >Relationship to Protagonist</label
-                    >
-                    <input
-                      type="text"
-                      bind:value={supportingCharacterRelationship}
-                      placeholder="e.g., Childhood friend, rival from academy..."
-                      class="input"
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-surface-400"
-                      >Traits (comma-separated)</label
-                    >
-                    <input
-                      type="text"
-                      bind:value={supportingCharacterTraits}
-                      placeholder="e.g., cunning, loyal, mysterious..."
-                      class="input"
-                    />
-                  </div>
-
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-surface-400"
-                      >Elaboration guidance (optional)</label
-                    >
-                    <textarea
-                      bind:value={supportingCharacterGuidance}
-                      placeholder="e.g., Make them more sinister, add a hidden agenda..."
-                      class="input min-h-[50px] resize-none text-sm"
-                      rows="2"
-                    ></textarea>
-                  </div>
-
-                  <div
-                    class="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 pt-2 border-t border-surface-700"
-                  >
-                    <button
-                      class="btn btn-secondary btn-sm flex items-center justify-center gap-1 col-span-1"
-                      onclick={useSupportingCharacterAsIs}
-                      disabled={!supportingCharacterName.trim()}
-                      title="Use character as entered"
-                    >
-                      <Check class="h-3 w-3" />
-                      <span>Use As-Is</span>
-                    </button>
-                    <button
-                      class="btn btn-primary btn-sm flex items-center justify-center gap-1 col-span-1"
-                      onclick={elaborateSupportingCharacter}
-                      disabled={isElaboratingSupportingCharacter ||
-                        (!supportingCharacterName.trim() &&
-                          !supportingCharacterDescription.trim())}
-                      title="Have AI expand on character details"
-                    >
-                      {#if isElaboratingSupportingCharacter}
-                        <Loader2 class="h-3 w-3 animate-spin" />
-                        <span>Elaborating...</span>
-                      {:else}
-                        <Sparkles class="h-3 w-3" />
-                        <span class="sm:hidden">Elaborate</span>
-                        <span class="hidden sm:inline">Elaborate with AI</span>
-                      {/if}
-                    </button>
-                    <button
-                      class="btn btn-secondary btn-sm flex items-center justify-center gap-1 col-span-2 sm:w-auto"
-                      onclick={cancelSupportingCharacterForm}
-                    >
-                      <X class="h-3 w-3" />
-                      <span>Cancel</span>
-                    </button>
-                  </div>
-                </div>
-              {/if}
-
-              <!-- Character List -->
-              {#if supportingCharacters.length > 0}
-                <div class="space-y-2">
-                  {#each supportingCharacters as char, index}
-                    <div class="card bg-surface-900 p-3">
-                      <div class="flex items-center gap-2 mb-2">
-                        <span class="font-medium text-surface-100"
-                          >{char.name}</span
-                        >
-                        <span
-                          class="text-xs px-1.5 py-0.5 rounded bg-accent-500/20 text-accent-400"
-                          >{char.role}</span
-                        >
-                      </div>
-                      <p class="text-sm text-surface-300">
-                        {char.description}
-                      </p>
-                      {#if char.relationship}
-                        <p class="text-xs text-surface-400 mt-1">
-                          {char.relationship}
-                        </p>
-                      {/if}
-                      {#if char.traits && char.traits.length > 0}
-                        <div class="flex flex-wrap gap-2 mt-2">
-                          {#each char.traits as trait}
-                            <span
-                              class="px-2 py-1 rounded-md bg-surface-800 text-xs text-surface-300 border border-surface-700"
-                              >{trait}</span
-                            >
-                          {/each}
-                        </div>
-                      {/if}
-                      <div
-                        class="flex justify-center gap-3 mt-3 pt-2 border-t border-surface-800"
-                      >
-                        <button
-                          class="p-1.5 text-surface-400 hover:text-surface-100 hover:bg-surface-800 rounded-lg transition-colors"
-                          onclick={() => editSupportingCharacter(index)}
-                          title="Edit character"
-                        >
-                          <PenTool class="h-4 w-4" />
-                        </button>
-                        <button
-                          class="p-1.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
-                          onclick={() => deleteSupportingCharacter(index)}
-                          title="Delete character"
-                        >
-                          <Trash2 class="h-4 w-4" />
-                        </button>
-                      </div>
-                    </div>
-                  {/each}
-                </div>
-              {:else if !showSupportingCharacterForm}
-                <p class="text-sm text-surface-500 italic">
-                  No supporting characters yet. Add one manually or generate
-                  multiple with AI.
-                </p>
-              {/if}
-            </div>
-          {/if}
-        </div>
+        <Step5Characters
+          {selectedMode}
+          {expandedSetting}
+          {protagonist}
+          {supportingCharacters}
+          {manualCharacterName}
+          {manualCharacterDescription}
+          {manualCharacterBackground}
+          {manualCharacterMotivation}
+          {manualCharacterTraits}
+          {showManualInput}
+          {characterElaborationGuidance}
+          {showSupportingCharacterForm}
+          {editingSupportingCharacterIndex}
+          {supportingCharacterName}
+          {supportingCharacterRole}
+          {supportingCharacterDescription}
+          {supportingCharacterRelationship}
+          {supportingCharacterTraits}
+          {supportingCharacterGuidance}
+          {isGeneratingProtagonist}
+          {isElaboratingCharacter}
+          {isGeneratingCharacters}
+          {isElaboratingSupportingCharacter}
+          {protagonistError}
+          {showProtagonistVaultPicker}
+          {showSupportingVaultPicker}
+          {savedToVaultConfirm}
+          onManualNameChange={(v) => (manualCharacterName = v)}
+          onManualDescriptionChange={(v) => (manualCharacterDescription = v)}
+          onManualBackgroundChange={(v) => (manualCharacterBackground = v)}
+          onManualMotivationChange={(v) => (manualCharacterMotivation = v)}
+          onManualTraitsChange={(v) => (manualCharacterTraits = v)}
+          onShowManualInputChange={(v) => (showManualInput = v)}
+          onCharacterGuidanceChange={(v) => (characterElaborationGuidance = v)}
+          onSupportingNameChange={(v) => (supportingCharacterName = v)}
+          onSupportingRoleChange={(v) => (supportingCharacterRole = v)}
+          onSupportingDescriptionChange={(v) => (supportingCharacterDescription = v)}
+          onSupportingRelationshipChange={(v) => (supportingCharacterRelationship = v)}
+          onSupportingTraitsChange={(v) => (supportingCharacterTraits = v)}
+          onSupportingGuidanceChange={(v) => (supportingCharacterGuidance = v)}
+          onUseManualCharacter={useManualCharacter}
+          onElaborateCharacter={() => elaborateCharacter()}
+          onElaborateCharacterFurther={elaborateCharacterFurther}
+          onGenerateProtagonist={generateProtagonist}
+          onEditCharacter={editCharacter}
+          onSaveToVault={handleSaveProtagonistToVault}
+          onOpenSupportingForm={openSupportingCharacterForm}
+          onEditSupportingCharacter={editSupportingCharacter}
+          onCancelSupportingForm={cancelSupportingCharacterForm}
+          onUseSupportingAsIs={useSupportingCharacterAsIs}
+          onElaborateSupportingCharacter={elaborateSupportingCharacter}
+          onDeleteSupportingCharacter={deleteSupportingCharacter}
+          onGenerateCharacters={generateCharacters}
+          onShowProtagonistVaultPicker={(show) => (showProtagonistVaultPicker = show)}
+          onShowSupportingVaultPicker={(show) => (showSupportingVaultPicker = show)}
+          onSelectProtagonistFromVault={handleSelectProtagonistFromVault}
+          onSelectSupportingFromVault={handleSelectSupportingFromVault}
+        />
       {:else if currentStep === 6}
-        <!-- Step 6: Character Portraits -->
-        <div class="space-y-4">
-          <p class="text-surface-400">
-            Upload or generate portrait images for your characters. In portrait
-            mode, only characters with portraits can appear in story images.
-          </p>
-
-          {#if !imageGenerationEnabled}
-            <div class="card bg-amber-500/10 border-amber-500/30 p-4">
-              <p class="text-sm text-amber-400">
-                Image generation is not configured. You can still upload
-                portraits manually, or enable generation in Settings &gt; Image
-                Generation.
-              </p>
-            </div>
-          {/if}
-
-          {#if portraitError}
-            <div class="card bg-red-500/10 border-red-500/30 p-3">
-              <p class="text-sm text-red-400">{portraitError}</p>
-            </div>
-          {/if}
-
-          <!-- Protagonist Portrait -->
-          {#if protagonist}
-            <div class="card bg-surface-900 p-4 space-y-3">
-              <div class="flex items-center justify-between">
-                <h3 class="font-medium text-surface-100">{protagonist.name}</h3>
-                <span
-                  class="text-xs px-2 py-0.5 rounded bg-primary-500/20 text-primary-400"
-                  >Protagonist</span
-                >
-              </div>
-
-              <div class="flex gap-4">
-                <!-- Portrait Preview -->
-                <div class="shrink-0">
-                  {#if protagonistPortrait}
-                    <div class="relative">
-                      <img
-                        src={normalizeImageDataUrl(protagonistPortrait) ?? ""}
-                        alt="{protagonist.name} portrait"
-                        class="w-24 h-24 rounded-lg object-cover ring-1 ring-surface-600"
-                      />
-                      <button
-                        class="absolute -right-1 -top-1 rounded-full bg-red-500 p-0.5 text-white hover:bg-red-600"
-                        onclick={removeProtagonistPortrait}
-                        title="Remove portrait"
-                      >
-                        <X class="h-3 w-3" />
-                      </button>
-                    </div>
-                  {:else}
-                    <div
-                      class="w-24 h-24 rounded-lg border-2 border-dashed border-surface-600 bg-surface-800 flex items-center justify-center"
-                    >
-                      <User class="h-8 w-8 text-surface-600" />
-                    </div>
-                  {/if}
-                </div>
-
-                <!-- Appearance Input & Generate/Upload Buttons -->
-                <div class="flex-1 space-y-2">
-                  <div>
-                    <label
-                      class="mb-1 block text-xs font-medium text-surface-400"
-                      >Appearance (comma-separated)</label
-                    >
-                    <textarea
-                      bind:value={protagonistVisualDescriptors}
-                      placeholder="e.g., long silver hair, violet eyes, fair skin, elegant dark blue coat..."
-                      class="input text-sm min-h-[60px] resize-none"
-                      rows="2"
-                    ></textarea>
-                  </div>
-                  <div class="flex gap-2">
-                    <label
-                      class="btn btn-secondary btn-sm flex items-center gap-1 cursor-pointer"
-                    >
-                      {#if isUploadingProtagonistPortrait}
-                        <Loader2 class="h-3 w-3 animate-spin" />
-                        Uploading...
-                      {:else}
-                        <ImageUp class="h-3 w-3" />
-                        Upload
-                      {/if}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        class="hidden"
-                        onchange={handleProtagonistPortraitUpload}
-                        disabled={isUploadingProtagonistPortrait ||
-                          isGeneratingProtagonistPortrait}
-                      />
-                    </label>
-                    {#if imageGenerationEnabled}
-                      <button
-                        class="btn btn-secondary btn-sm flex items-center gap-1"
-                        onclick={generateProtagonistPortrait}
-                        disabled={isGeneratingProtagonistPortrait ||
-                          isUploadingProtagonistPortrait ||
-                          !protagonistVisualDescriptors.trim()}
-                        title={!protagonistVisualDescriptors.trim()
-                          ? "Add appearance descriptors to generate"
-                          : ""}
-                      >
-                        {#if isGeneratingProtagonistPortrait}
-                          <Loader2 class="h-3 w-3 animate-spin" />
-                          Generating...
-                        {:else}
-                          <Wand2 class="h-3 w-3" />
-                          {protagonistPortrait ? "Regenerate" : "Generate"}
-                        {/if}
-                      </button>
-                    {/if}
-                  </div>
-                </div>
-              </div>
-            </div>
-          {:else}
-            <div
-              class="card bg-surface-900 border-dashed border-2 border-surface-600 p-4 text-center"
-            >
-              <p class="text-surface-400 text-sm">
-                No protagonist created. Go back to step 5 to create one.
-              </p>
-            </div>
-          {/if}
-
-          <!-- Supporting Character Portraits -->
-          {#if supportingCharacters.length > 0}
-            <div class="space-y-3">
-              <h4 class="text-sm font-medium text-surface-300">
-                Supporting Characters
-              </h4>
-              {#each supportingCharacters as char, index}
-                <div class="card bg-surface-900 p-4 space-y-3">
-                  <div class="flex items-center justify-between">
-                    <h3 class="font-medium text-surface-100">{char.name}</h3>
-                    <span
-                      class="text-xs px-2 py-0.5 rounded bg-accent-500/20 text-accent-400"
-                      >{char.role}</span
-                    >
-                  </div>
-
-                  <div class="flex gap-4">
-                    <!-- Portrait Preview -->
-                    <div class="shrink-0">
-                      {#if supportingCharacterPortraits[char.name]}
-                        <div class="relative">
-                          <img
-                            src={normalizeImageDataUrl(
-                              supportingCharacterPortraits[char.name],
-                            ) ?? ""}
-                            alt="{char.name} portrait"
-                            class="w-24 h-24 rounded-lg object-cover ring-1 ring-surface-600"
-                          />
-                          <button
-                            class="absolute -right-1 -top-1 rounded-full bg-red-500 p-0.5 text-white hover:bg-red-600"
-                            onclick={() =>
-                              removeSupportingCharacterPortrait(char.name)}
-                            title="Remove portrait"
-                          >
-                            <X class="h-3 w-3" />
-                          </button>
-                        </div>
-                      {:else}
-                        <div
-                          class="w-24 h-24 rounded-lg border-2 border-dashed border-surface-600 bg-surface-800 flex items-center justify-center"
-                        >
-                          <User class="h-8 w-8 text-surface-600" />
-                        </div>
-                      {/if}
-                    </div>
-
-                    <!-- Appearance Input & Generate/Upload Buttons -->
-                    <div class="flex-1 space-y-2">
-                      <div>
-                        <label
-                          class="mb-1 block text-xs font-medium text-surface-400"
-                          >Appearance (comma-separated)</label
-                        >
-                        <textarea
-                          value={supportingCharacterVisualDescriptors[
-                            char.name
-                          ] || ""}
-                          oninput={(e) => {
-                            supportingCharacterVisualDescriptors[char.name] =
-                              e.currentTarget.value;
-                            supportingCharacterVisualDescriptors = {
-                              ...supportingCharacterVisualDescriptors,
-                            };
-                          }}
-                          placeholder="e.g., short dark hair, green eyes, athletic build..."
-                          class="input text-sm min-h-[60px] resize-none"
-                          rows="2"
-                        ></textarea>
-                      </div>
-                      <div class="flex gap-2">
-                        <label
-                          class="btn btn-secondary btn-sm flex items-center gap-1 cursor-pointer"
-                        >
-                          {#if uploadingCharacterName === char.name}
-                            <Loader2 class="h-3 w-3 animate-spin" />
-                            Uploading...
-                          {:else}
-                            <ImageUp class="h-3 w-3" />
-                            Upload
-                          {/if}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            class="hidden"
-                            onchange={(e) =>
-                              handleSupportingCharacterPortraitUpload(
-                                e,
-                                char.name,
-                              )}
-                            disabled={uploadingCharacterName !== null ||
-                              generatingPortraitName !== null}
-                          />
-                        </label>
-                        {#if imageGenerationEnabled}
-                          <button
-                            class="btn btn-secondary btn-sm flex items-center gap-1"
-                            onclick={() =>
-                              generateSupportingCharacterPortrait(char.name)}
-                            disabled={generatingPortraitName !== null ||
-                              uploadingCharacterName !== null ||
-                              !(
-                                supportingCharacterVisualDescriptors[
-                                  char.name
-                                ] || ""
-                              ).trim()}
-                            title={!(
-                              supportingCharacterVisualDescriptors[char.name] ||
-                              ""
-                            ).trim()
-                              ? "Add appearance descriptors to generate"
-                              : ""}
-                          >
-                            {#if generatingPortraitName === char.name}
-                              <Loader2 class="h-3 w-3 animate-spin" />
-                              Generating...
-                            {:else}
-                              <Wand2 class="h-3 w-3" />
-                              {supportingCharacterPortraits[char.name]
-                                ? "Regenerate"
-                                : "Generate"}
-                            {/if}
-                          </button>
-                        {/if}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              {/each}
-            </div>
-          {/if}
-
-          {#if !protagonist && supportingCharacters.length === 0}
-            <div
-              class="card bg-surface-900 border-dashed border-2 border-surface-600 p-6 text-center"
-            >
-              <p class="text-surface-400">
-                No characters created yet. Go back to step 5 to create
-                characters.
-              </p>
-            </div>
-          {/if}
-
-          <p class="text-xs text-surface-500 text-center">
-            Portraits are optional. You can skip this step and add portraits
-            later from the Characters panel.
-          </p>
-        </div>
+        <Step6Portraits
+          {protagonist}
+          {supportingCharacters}
+          {imageGenerationEnabled}
+          {protagonistVisualDescriptors}
+          {protagonistPortrait}
+          {isGeneratingProtagonistPortrait}
+          {isUploadingProtagonistPortrait}
+          {supportingCharacterVisualDescriptors}
+          {supportingCharacterPortraits}
+          {generatingPortraitName}
+          {uploadingCharacterName}
+          {portraitError}
+          onProtagonistDescriptorsChange={(v) => (protagonistVisualDescriptors = v)}
+          onGenerateProtagonistPortrait={generateProtagonistPortrait}
+          onRemoveProtagonistPortrait={removeProtagonistPortrait}
+          onProtagonistPortraitUpload={handleProtagonistPortraitUpload}
+          onSupportingDescriptorsChange={(name, v) => {
+            supportingCharacterVisualDescriptors[name] = v;
+            supportingCharacterVisualDescriptors = { ...supportingCharacterVisualDescriptors };
+          }}
+          onGenerateSupportingPortrait={generateSupportingCharacterPortrait}
+          onRemoveSupportingPortrait={removeSupportingCharacterPortrait}
+          onSupportingPortraitUpload={handleSupportingCharacterPortraitUpload}
+        />
       {:else if currentStep === 7}
-        <!-- Step 7: Writing Style -->
-        <div class="space-y-4">
-          <p class="text-surface-400">
-            Customize how your story will be written.
-          </p>
-
-          <!-- POV Selection -->
-          <div>
-            <label class="mb-2 block text-sm font-medium text-surface-300"
-              >Point of View</label
-            >
-            <div class="grid gap-2 grid-cols-3">
-              {#each povOptions as option}
-                <button
-                  class="card p-3 text-center transition-all"
-                  class:ring-2={selectedPOV === option.id}
-                  class:ring-accent-500={selectedPOV === option.id}
-                  onclick={() => (selectedPOV = option.id)}
-                >
-                  <span class="block font-medium text-surface-100"
-                    >{option.label}</span
-                  >
-                  <span class="text-xs text-surface-400">{option.example}</span>
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <!-- Tense Selection -->
-          <div>
-            <label class="mb-2 block text-sm font-medium text-surface-300"
-              >Tense</label
-            >
-            <div class="grid grid-cols-2 gap-2">
-              {#each tenseOptions as option}
-                <button
-                  class="card p-3 text-center transition-all"
-                  class:ring-2={selectedTense === option.id}
-                  class:ring-accent-500={selectedTense === option.id}
-                  onclick={() => (selectedTense = option.id)}
-                >
-                  <span class="block font-medium text-surface-100"
-                    >{option.label}</span
-                  >
-                  <span class="text-xs text-surface-400">{option.example}</span>
-                </button>
-              {/each}
-            </div>
-          </div>
-
-          <!-- Tone Selection -->
-          <div>
-            <label class="mb-2 block text-sm font-medium text-surface-300"
-              >Tone</label
-            >
-            <div class="flex flex-wrap gap-2 mb-2">
-              {#each tonePresets as preset}
-                <button
-                  class="px-3 py-1 rounded-full text-sm transition-colors"
-                  class:bg-accent-500={tone === preset}
-                  class:text-white={tone === preset}
-                  class:bg-surface-700={tone !== preset}
-                  class:text-surface-300={tone !== preset}
-                  class:hover:bg-surface-600={tone !== preset}
-                  onclick={() => (tone = preset)}
-                >
-                  {preset}
-                </button>
-              {/each}
-            </div>
-            <input
-              type="text"
-              bind:value={tone}
-              placeholder="Or describe your own tone..."
-              class="input"
-            />
-          </div>
-
-          <!-- Visual Prose Mode Toggle -->
-          <div class="card bg-surface-800/50 p-4">
-            <div class="flex items-start gap-3">
-              <div class="rounded-full bg-surface-700 p-2">
-                <Sparkles class="h-5 w-5 text-accent-400" />
-              </div>
-              <div class="flex-1">
-                <div class="flex items-center justify-between">
-                  <div class="text-sm font-medium text-surface-200">
-                    Visual Prose Mode
-                  </div>
-                  <button
-                    type="button"
-                    class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent-500 focus:ring-offset-2 focus:ring-offset-surface-800"
-                    class:bg-accent-600={visualProseMode}
-                    class:bg-surface-600={!visualProseMode}
-                    onclick={() => (visualProseMode = !visualProseMode)}
-                    role="switch"
-                    aria-checked={visualProseMode}
-                    aria-label="Toggle Visual Prose Mode"
-                  >
-                    <span
-                      class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                      class:translate-x-5={visualProseMode}
-                      class:translate-x-0={!visualProseMode}
-                    ></span>
-                  </button>
-                </div>
-                <p class="mt-1 text-xs text-surface-400">
-                  Enable rich HTML/CSS visual output. The AI can create styled
-                  layouts, dialogue boxes, and atmospheric effects. Best for
-                  immersive, cinematic storytelling.
-                </p>
-              </div>
-            </div>
-          </div>
-
-          <!-- Inline Image Mode Toggle -->
-          <div class="card bg-surface-800/50 p-4">
-            <div class="flex items-start gap-3">
-              <div class="rounded-full bg-surface-700 p-2">
-                <ImageIcon class="h-5 w-5 text-blue-400" />
-              </div>
-              <div class="flex-1">
-                <div class="flex items-center justify-between">
-                  <div class="text-sm font-medium text-surface-200">
-                    Inline Image Mode
-                  </div>
-                  <button
-                    type="button"
-                    class="relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-accent-500 focus:ring-offset-2 focus:ring-offset-surface-800"
-                    class:bg-accent-600={inlineImageMode}
-                    class:bg-surface-600={!inlineImageMode}
-                    onclick={() => (inlineImageMode = !inlineImageMode)}
-                    role="switch"
-                    aria-checked={inlineImageMode}
-                    aria-label="Toggle Inline Image Mode"
-                  >
-                    <span
-                      class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out"
-                      class:translate-x-5={inlineImageMode}
-                      class:translate-x-0={!inlineImageMode}
-                    ></span>
-                  </button>
-                </div>
-                <p class="mt-1 text-xs text-surface-400">
-                  AI places image tags directly in the narrative. Images are
-                  generated inline where the AI decides they fit best. Requires
-                  image generation to be configured.
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
+        <Step7WritingStyle
+          {selectedPOV}
+          {selectedTense}
+          {tone}
+          {visualProseMode}
+          {inlineImageMode}
+          onPOVChange={(v) => (selectedPOV = v)}
+          onTenseChange={(v) => (selectedTense = v)}
+          onToneChange={(v) => (tone = v)}
+          onVisualProseModeChange={(v) => (visualProseMode = v)}
+          onInlineImageModeChange={(v) => (inlineImageMode = v)}
+        />
       {:else if currentStep === 8}
-        <!-- Step 8: Generate Opening -->
-        <div class="space-y-4">
-          <p class="text-surface-400">
-            Give your story a title and generate the opening scene.
-          </p>
-
-          <div>
-            <label class="mb-2 block text-sm font-medium text-surface-300"
-              >Story Title</label
-            >
-            <input
-              type="text"
-              bind:value={storyTitle}
-              placeholder="Enter a title for your adventure..."
-              class="input"
-            />
-          </div>
-
-          <!-- Imported Opening Scene from Character Card -->
-          {#if cardImportedFirstMessage}
-            <div class="card bg-surface-800/50 p-4 space-y-3">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                  <FileJson class="h-4 w-4 text-accent-400" />
-                  <h4 class="font-medium text-surface-200">
-                    Imported Opening Scene
-                  </h4>
-                </div>
-                <button
-                  class="text-xs text-surface-400 hover:text-surface-200"
-                  onclick={() => {
-                    cardImportedFirstMessage = null;
-                    cardImportedAlternateGreetings = [];
-                    selectedGreetingIndex = 0;
-                  }}
-                >
-                  Clear
-                </button>
-              </div>
-
-              <!-- Greeting Selection (if alternate greetings exist) -->
-              {#if cardImportedAlternateGreetings.length > 0}
-                <div>
-                  <label class="mb-2 block text-xs font-medium text-surface-400"
-                    >Select Opening</label
-                  >
-                  <div class="flex flex-wrap gap-2">
-                    <button
-                      class="px-3 py-1.5 rounded text-xs transition-colors {selectedGreetingIndex ===
-                      0
-                        ? 'bg-accent-600 text-white'
-                        : 'bg-surface-700 text-surface-300 hover:bg-surface-600'}"
-                      onclick={() => (selectedGreetingIndex = 0)}
-                    >
-                      Default
-                    </button>
-                    {#each cardImportedAlternateGreetings as _, i}
-                      <button
-                        class="px-3 py-1.5 rounded text-xs transition-colors {selectedGreetingIndex ===
-                        i + 1
-                          ? 'bg-accent-600 text-white'
-                          : 'bg-surface-700 text-surface-300 hover:bg-surface-600'}"
-                        onclick={() => (selectedGreetingIndex = i + 1)}
-                      >
-                        Alt {i + 1}
-                      </button>
-                    {/each}
-                  </div>
-                </div>
-              {/if}
-
-              <!-- Preview of selected opening -->
-              <div class="card bg-surface-900 p-3 max-h-48 overflow-y-auto">
-                <p class="text-sm text-surface-300 whitespace-pre-wrap">
-                  {@html styleUserPlaceholders(
-                    selectedGreetingIndex === 0
-                      ? cardImportedFirstMessage || ""
-                      : cardImportedAlternateGreetings[
-                          selectedGreetingIndex - 1
-                        ] || "",
-                  )}
-                </p>
-              </div>
-              {#if (selectedGreetingIndex === 0 ? cardImportedFirstMessage : cardImportedAlternateGreetings[selectedGreetingIndex - 1])?.includes("{{user}}")}
-                <p class="text-xs text-surface-500 flex items-center gap-1">
-                  <span
-                    class="inline-flex items-center px-1 py-0.5 rounded bg-primary-600/30 text-primary-300 text-[10px] font-mono border border-primary-500/40"
-                    >{"{{user}}"}</span
-                  >
-                  will be replaced with your character's name
-                </p>
-              {/if}
-
-              <button
-                class="btn btn-primary btn-sm flex items-center gap-2"
-                onclick={() => {
-                  const selectedScene =
-                    selectedGreetingIndex === 0
-                      ? cardImportedFirstMessage
-                      : cardImportedAlternateGreetings[
-                          selectedGreetingIndex - 1
-                        ];
-                  generatedOpening = {
-                    title: storyTitle,
-                    scene: selectedScene || "",
-                    initialLocation: {
-                      name:
-                        expandedSetting?.keyLocations?.[0]?.name ||
-                        "Starting Location",
-                      description:
-                        expandedSetting?.keyLocations?.[0]?.description ||
-                        "The scene begins here.",
-                    },
-                  };
-                  openingError = null;
-                  clearOpeningEditState();
-                }}
-              >
-                <Check class="h-3 w-3" />
-                Use This Opening
-              </button>
-            </div>
-          {/if}
-
-          <!-- Opening Scene Guidance (Creative Writing Mode Only) -->
-          {#if selectedMode === "creative-writing"}
-            <div class="card bg-surface-900 p-4 space-y-3">
-              <div class="flex items-center gap-2">
-                <Feather class="h-4 w-4 text-secondary-400" />
-                <h4 class="font-medium text-surface-200">
-                  Opening Scene Guidance
-                </h4>
-                <span class="text-xs text-surface-500">(Optional)</span>
-              </div>
-              <p class="text-sm text-surface-400">
-                As the author, describe what you want to happen in the opening
-                scene. Include setting details, character positions, mood, or
-                specific events.
-              </p>
-              <textarea
-                bind:value={openingGuidance}
-                placeholder="e.g., The scene opens at night in a crowded tavern. Sarah sits alone in a corner, nursing a drink, when a mysterious stranger approaches her table with urgent news about her missing brother..."
-                class="input min-h-[100px] resize-y text-sm"
-                rows="4"
-              ></textarea>
-            </div>
-          {/if}
-
-          {#if storyTitle.trim()}
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <button
-                class="btn btn-secondary flex w-full items-center justify-center gap-2 sm:w-auto"
-                onclick={generateOpeningScene}
-                disabled={isGeneratingOpening || isRefiningOpening}
-              >
-                {#if isGeneratingOpening}
-                  <Loader2 class="h-4 w-4 animate-spin" />
-                  Generating Opening...
-                {:else}
-                  <PenTool class="h-4 w-4" />
-                  {generatedOpening
-                    ? "Regenerate Opening"
-                    : "Generate Opening Scene"}
-                {/if}
-              </button>
-              {#if !generatedOpening && !isGeneratingOpening && !cardImportedFirstMessage}
-                <span class="text-sm text-amber-400"
-                  >Required to begin story</span
-                >
-              {:else if !generatedOpening && !isGeneratingOpening && cardImportedFirstMessage}
-                <span class="text-sm text-surface-400"
-                  >Or use the imported opening above</span
-                >
-              {/if}
-            </div>
-          {:else}
-            <p class="text-sm text-surface-500">
-              Enter a title to generate the opening scene
-            </p>
-          {/if}
-
-          {#if openingError}
-            <p class="text-sm text-red-400">{openingError}</p>
-          {/if}
-
-          {#if generatedOpening}
-            <div class="card bg-surface-900 p-4 space-y-3">
-              <div class="flex items-start justify-between gap-3">
-                <h3 class="font-semibold text-surface-100">
-                  {generatedOpening?.title || storyTitle}
-                </h3>
-                {#if !isEditingOpening}
-                  <div class="flex items-center gap-2">
-                    <button
-                      class="text-xs text-surface-400 hover:text-surface-200 flex items-center gap-1"
-                      onclick={startOpeningEdit}
-                      title="Edit the opening text"
-                    >
-                      <PenTool class="h-3 w-3" />
-                      Edit
-                    </button>
-                    <button
-                      class="text-xs text-accent-400 hover:text-accent-300 flex items-center gap-1"
-                      onclick={refineOpeningScene}
-                      disabled={isRefiningOpening || isGeneratingOpening}
-                      title="Refine using the current opening text"
-                    >
-                      {#if isRefiningOpening}
-                        <Loader2 class="h-3 w-3 animate-spin" />
-                        Refining...
-                      {:else}
-                        <Sparkles class="h-3 w-3" />
-                        Refine Further
-                      {/if}
-                    </button>
-                  </div>
-                {/if}
-              </div>
-              {#if isEditingOpening}
-                <textarea
-                  bind:value={openingDraft}
-                  class="input min-h-[140px] resize-y text-sm"
-                  rows="6"
-                ></textarea>
-                <div class="flex justify-end gap-2">
-                  <button
-                    class="btn btn-secondary btn-sm"
-                    onclick={cancelOpeningEdit}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    class="btn btn-primary btn-sm"
-                    onclick={saveOpeningEdit}
-                    disabled={!openingDraft.trim()}
-                  >
-                    Save Changes
-                  </button>
-                </div>
-              {:else}
-                <div
-                  class="prose prose-invert prose-sm max-w-none max-h-64 overflow-y-auto"
-                >
-                  <p class="text-surface-300 whitespace-pre-wrap">
-                    {generatedOpening?.scene || ""}
-                  </p>
-                </div>
-              {/if}
-            </div>
-          {/if}
-
-          <!-- Summary -->
-          <div class="card bg-surface-800 p-4 space-y-2 text-sm">
-            <h4 class="font-medium text-surface-200">Story Summary</h4>
-            <div class="grid grid-cols-2 gap-2 text-surface-400">
-              <div>
-                <strong>Mode:</strong>
-                {selectedMode === "adventure"
-                  ? "Adventure"
-                  : "Creative Writing"}
-              </div>
-              <div>
-                <strong>Genre:</strong>
-                {selectedGenre === "custom" ? customGenre : selectedGenre}
-              </div>
-              <div>
-                <strong>POV:</strong>
-                {povOptions.find((p) => p.id === selectedPOV)?.label}
-              </div>
-              <div>
-                <strong>Tense:</strong>
-                {tenseOptions.find((t) => t.id === selectedTense)?.label}
-              </div>
-              {#if expandedSetting}
-                <div class="col-span-2">
-                  <strong>Setting:</strong>
-                  {expandedSetting.name}
-                </div>
-              {/if}
-              {#if protagonist}
-                <div class="col-span-2">
-                  <strong>Protagonist:</strong>
-                  {protagonist.name}
-                </div>
-              {/if}
-              {#if importedEntries.length > 0}
-                <div class="col-span-2 flex items-center gap-2">
-                  <Book class="h-4 w-4 text-accent-400" />
-                  <strong>Lorebook:</strong>
-                  {importedEntries.length} entries to import
-                </div>
-              {/if}
-            </div>
-          </div>
-        </div>
+        <Step8Opening
+          {storyTitle}
+          {openingGuidance}
+          {generatedOpening}
+          {isGeneratingOpening}
+          {isRefiningOpening}
+          {isEditingOpening}
+          {openingDraft}
+          {openingError}
+          {cardImportedFirstMessage}
+          {cardImportedAlternateGreetings}
+          {selectedGreetingIndex}
+          {selectedMode}
+          {selectedGenre}
+          {customGenre}
+          {selectedPOV}
+          {selectedTense}
+          {expandedSetting}
+          {protagonist}
+          importedEntriesCount={importedEntries.length}
+          onTitleChange={(v) => (storyTitle = v)}
+          onGuidanceChange={(v) => (openingGuidance = v)}
+          onSelectedGreetingChange={(v) => (selectedGreetingIndex = v)}
+          onGenerateOpening={generateOpeningScene}
+          onRefineOpening={refineOpeningScene}
+          onStartEdit={startOpeningEdit}
+          onCancelEdit={cancelOpeningEdit}
+          onSaveEdit={saveOpeningEdit}
+          onDraftChange={(v) => (openingDraft = v)}
+          onUseCardOpening={useCardOpening}
+          onClearCardOpening={clearCardOpening}
+        />
       {/if}
     </div>
 

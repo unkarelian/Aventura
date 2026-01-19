@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { lorebookVault } from '$lib/stores/lorebookVault.svelte';
-  import type { VaultLorebook } from '$lib/types';
-  import { X, Search, Archive, Loader2 } from 'lucide-svelte';
-  import VaultLorebookCard from './VaultLorebookCard.svelte';
+  import { lorebookVault } from "$lib/stores/lorebookVault.svelte";
+  import type { VaultLorebook } from "$lib/types";
+  import { X, Search, Archive, Loader2 } from "lucide-svelte";
+  import VaultLorebookCard from "./VaultLorebookCard.svelte";
 
   interface Props {
     onSelect: (lorebook: VaultLorebook) => void;
@@ -11,17 +11,18 @@
 
   let { onSelect, onClose }: Props = $props();
 
-  let searchQuery = $state('');
+  let searchQuery = $state("");
 
   const filteredLorebooks = $derived.by(() => {
     let books = lorebookVault.lorebooks;
 
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      books = books.filter(b =>
-        b.name.toLowerCase().includes(query) ||
-        b.description?.toLowerCase().includes(query) ||
-        b.tags.some(t => t.toLowerCase().includes(query))
+      books = books.filter(
+        (b) =>
+          b.name.toLowerCase().includes(query) ||
+          b.description?.toLowerCase().includes(query) ||
+          b.tags.some((t) => t.toLowerCase().includes(query)),
       );
     }
 
@@ -48,21 +49,26 @@
 <!-- Modal backdrop -->
 <div
   class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-  onclick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+  onclick={(e) => {
+    if (e.target === e.currentTarget) onClose();
+  }}
   role="dialog"
   aria-modal="true"
 >
-  <div class="w-full max-w-3xl max-h-[80vh] flex flex-col rounded-lg bg-surface-800 shadow-xl">
+  <div
+    class="w-full max-w-2xl max-h-[80vh] flex flex-col rounded-lg bg-surface-800 shadow-xl"
+  >
     <!-- Header -->
-    <div class="flex items-center justify-between border-b border-surface-700 p-4">
+    <div
+      class="flex items-center justify-between border-b border-surface-700 p-4"
+    >
       <div class="flex items-center gap-2">
         <Archive class="h-5 w-5 text-accent-400" />
-        <h2 class="text-lg font-semibold text-surface-100">Select Lorebook from Vault</h2>
+        <h2 class="text-lg font-semibold text-surface-100">
+          Select Lorebook from Vault
+        </h2>
       </div>
-      <button
-        class="rounded p-1.5 hover:bg-surface-700"
-        onclick={onClose}
-      >
+      <button class="rounded p-1.5 hover:bg-surface-700" onclick={onClose}>
         <X class="h-5 w-5 text-surface-400" />
       </button>
     </div>
@@ -70,7 +76,9 @@
     <!-- Search -->
     <div class="border-b border-surface-700 p-4">
       <div class="relative">
-        <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500" />
+        <Search
+          class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-surface-500"
+        />
         <input
           type="text"
           bind:value={searchQuery}
