@@ -329,7 +329,7 @@
         Select a previously saved scenario.
       </p>
     {/if}
-    <div>
+    <div class="-mt-3">
       <VaultScenarioBrowser
         onSelect={handleSelectFromVault}
         selectedScenarioId={loadedVaultScenarioId}
