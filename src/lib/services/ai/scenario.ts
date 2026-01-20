@@ -337,11 +337,9 @@ class ScenarioService {
       }
     ];
 
-    const model = presetConfig.model || 'z-ai/glm-4.7';
-
     const response = await provider.generateResponse({
       messages,
-      model,
+      model: presetConfig.model,
       temperature: presetConfig.temperature ?? 0.3,
       maxTokens: presetConfig.maxTokens ?? 8192,
       extraBody: this.buildProcessExtraBody(presetConfig, SCENARIO_PROVIDER, 'off'),
@@ -425,7 +423,7 @@ class ScenarioService {
       }
     ];
 
-    const model = presetConfig.model || 'deepseek/deepseek-v3.2';
+    const model = presetConfig.model;
 
     const response = await provider.generateResponse({
       messages,
@@ -513,7 +511,7 @@ class ScenarioService {
       }
     ];
 
-    const model = presetConfig.model || 'deepseek/deepseek-v3.2';
+    const model = presetConfig.model;
 
     const response = await provider.generateResponse({
       messages,
@@ -600,7 +598,7 @@ class ScenarioService {
       }
     ];
 
-    const model = presetConfig.model || 'deepseek/deepseek-v3.2';
+    const model = presetConfig.model;
 
     const response = await provider.generateResponse({
       messages,
@@ -670,7 +668,7 @@ class ScenarioService {
       }
     ];
 
-    const model = presetConfig.model || 'deepseek/deepseek-v3.2';
+    const model = presetConfig.model;
 
     const response = await provider.generateResponse({
       messages,
@@ -736,7 +734,7 @@ class ScenarioService {
 
     const response = await provider.generateResponse({
       messages,
-      model: presetConfig.model || SCENARIO_MODEL,
+      model: presetConfig.model,
       temperature: presetConfig.temperature ?? 0.3,
       maxTokens: presetConfig.maxTokens ?? 8192,
       extraBody: this.buildProcessExtraBody(presetConfig, SCENARIO_PROVIDER, 'off'),
@@ -778,7 +776,7 @@ class ScenarioService {
       { role: 'user', content: userPrompt },
     ];
 
-    const model = presetConfig.model || 'deepseek/deepseek-v3.2';
+    const model = presetConfig.model;
     const isZAI = model.startsWith('z-ai/');
     const isGLM = model.includes('glm');
 
@@ -848,7 +846,7 @@ class ScenarioService {
       { role: 'user', content: userPrompt },
     ];
 
-    const model = presetConfig.model || 'z-ai/glm-4.7';
+    const model = presetConfig.model;
     const isZAI = model.startsWith('z-ai/');
     const isGLM = model.includes('glm');
 
@@ -894,7 +892,7 @@ class ScenarioService {
       { role: 'user', content: userPrompt },
     ];
 
-    const model = presetConfig.model || 'z-ai/glm-4.7';
+    const model = presetConfig.model;
     const isZAI = model.startsWith('z-ai/');
     const isGLM = model.includes('glm');
 

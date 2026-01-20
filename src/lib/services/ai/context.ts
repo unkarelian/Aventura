@@ -338,9 +338,10 @@ export class ContextBuilder {
       entrySummaries,
     });
 
-    const entrySettings = settings.systemServicesSettings.entryRetrieval;
-    const tier3Model = entrySettings?.model || 'x-ai/grok-4.1-fast';
-    const tier3Temperature = entrySettings?.temperature ?? 0.1;
+    // Get preset configuration from Agent Profiles system
+    const preset = settings.getPresetConfig(settings.getServicePresetId('entryRetrieval'), 'Entry Retrieval');
+    const tier3Model = preset.model;
+    const tier3Temperature = preset.temperature;
 
     try {
       const response = await this.provider.generateResponse({

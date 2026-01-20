@@ -377,11 +377,12 @@ export async function convertCardToScenario(
   const preprocessedFirstMessage = normalizeUserMacro(card.firstMessage);
   const preprocessedAlternateGreetings = card.alternateGreetings.map(g => normalizeUserMacro(g));
 
-  // Get character card import settings
-  const cardImportSettings = settings.systemServicesSettings.characterCardImport;
+  // Get preset configuration from Agent Profiles system
+  const presetId = settings.getServicePresetId('characterCardImport');
+  const preset = settings.getPresetConfig(presetId, 'Character Card Import');
 
-  // Use specified profile, or fall back to card import profile, or main narrative profile
-  const resolvedProfileId = profileId ?? cardImportSettings.profileId ?? settings.apiSettings.mainNarrativeProfileId;
+  // Use specified profile, or fall back to preset profile, or main narrative profile
+  const resolvedProfileId = profileId ?? preset.profileId ?? settings.apiSettings.mainNarrativeProfileId;
   const apiSettings = settings.getApiSettingsForProfile(resolvedProfileId);
 
   if (!apiSettings.openaiApiKey) {
@@ -433,18 +434,18 @@ export async function convertCardToScenario(
 
   try {
     const response = await provider.generateResponse({
-      model: cardImportSettings.model,
+      model: preset.model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      temperature: cardImportSettings.temperature,
-      maxTokens: cardImportSettings.maxTokens,
+      temperature: preset.temperature,
+      maxTokens: preset.maxTokens,
       extraBody: buildExtraBody({
         manualMode: settings.advancedRequestSettings.manualMode,
-        manualBody: cardImportSettings.manualBody,
-        reasoningEffort: cardImportSettings.reasoningEffort,
-        providerOnly: cardImportSettings.providerOnly,
+        manualBody: preset.manualBody,
+        reasoningEffort: preset.reasoningEffort,
+        providerOnly: preset.providerOnly,
       }),
     });
 
@@ -555,9 +556,10 @@ export async function sanitizeCharacterCard(
 
   log('Sanitizing card:', card.name);
 
-  // Get settings
-  const cardImportSettings = settings.systemServicesSettings.characterCardImport;
-  const resolvedProfileId = profileId ?? cardImportSettings.profileId ?? settings.apiSettings.mainNarrativeProfileId;
+  // Get preset configuration from Agent Profiles system
+  const presetId = settings.getServicePresetId('characterCardImport');
+  const preset = settings.getPresetConfig(presetId, 'Character Card Import');
+  const resolvedProfileId = profileId ?? preset.profileId ?? settings.apiSettings.mainNarrativeProfileId;
   const apiSettings = settings.getApiSettingsForProfile(resolvedProfileId);
 
   if (!apiSettings.openaiApiKey) {
@@ -590,18 +592,18 @@ export async function sanitizeCharacterCard(
   try {
     log('Sending to LLM for sanitization...');
     const response = await provider.generateResponse({
-      model: cardImportSettings.model,
+      model: preset.model,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
-      temperature: cardImportSettings.temperature,
-      maxTokens: cardImportSettings.maxTokens,
+      temperature: preset.temperature,
+      maxTokens: preset.maxTokens,
       extraBody: buildExtraBody({
         manualMode: settings.advancedRequestSettings.manualMode,
-        manualBody: cardImportSettings.manualBody,
-        reasoningEffort: cardImportSettings.reasoningEffort,
-        providerOnly: cardImportSettings.providerOnly,
+        manualBody: preset.manualBody,
+        reasoningEffort: preset.reasoningEffort,
+        providerOnly: preset.providerOnly,
       }),
     });
 

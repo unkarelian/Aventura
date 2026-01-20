@@ -489,8 +489,8 @@ class AIService {
       mode,
     });
 
-    const provider = this.getProviderForProfile(settings.systemServicesSettings.memory.profileId);
-    const memory = new MemoryService(provider);
+    const provider = this.getProviderForProfile(settings.getPresetConfig(settings.getServicePresetId('memory'), 'Memory').profileId);
+    const memory = new MemoryService(provider, settings.getServicePresetId('memory'));
     return await memory.analyzeForChapter(entries, lastChapterEndIndex, config, tokensOutsideBuffer, mode, pov, tense);
   }
 
@@ -505,8 +505,8 @@ class AIService {
   async summarizeChapter(entries: StoryEntry[], previousChapters?: Chapter[], mode: StoryMode = 'adventure', pov?: POV, tense?: Tense): Promise<ChapterSummary> {
     log('summarizeChapter called', { entriesCount: entries.length, previousChaptersCount: previousChapters?.length ?? 0, mode });
 
-    const provider = this.getProviderForProfile(settings.systemServicesSettings.memory.profileId);
-    const memory = new MemoryService(provider);
+    const provider = this.getProviderForProfile(settings.getPresetConfig(settings.getServicePresetId('memory'), 'Memory').profileId);
+    const memory = new MemoryService(provider, settings.getServicePresetId('memory'));
     return await memory.summarizeChapter(entries, previousChapters, mode, pov, tense);
   }
 
@@ -529,8 +529,8 @@ class AIService {
   ): Promise<ChapterSummary> {
     log('resummarizeChapter called', { chapterId: chapter.id, chapterNumber: chapter.number, mode });
 
-    const provider = this.getProviderForProfile(settings.systemServicesSettings.memory.profileId);
-    const memory = new MemoryService(provider);
+    const provider = this.getProviderForProfile(settings.getPresetConfig(settings.getServicePresetId('memory'), 'Memory').profileId);
+    const memory = new MemoryService(provider, settings.getServicePresetId('memory'));
     return await memory.resummarizeChapter(chapter, entries, allChapters, mode, pov, tense);
   }
 
@@ -561,8 +561,8 @@ class AIService {
       mode,
     });
 
-    const provider = this.getProviderForProfile(settings.systemServicesSettings.memory.profileId);
-    const memory = new MemoryService(provider);
+    const provider = this.getProviderForProfile(settings.getPresetConfig(settings.getServicePresetId('memory'), 'Memory').profileId);
+    const memory = new MemoryService(provider, settings.getServicePresetId('memory'));
     return await memory.decideRetrieval(userInput, recentEntries, chapters, config, mode, pov, tense);
   }
 
