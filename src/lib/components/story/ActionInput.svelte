@@ -1116,6 +1116,9 @@
                       await database.updateStoryBeat(entityId, updateData as any);
                     }
                   }
+
+                  // Refresh story state to show translations in sidebar
+                  await story.refreshWorldState();
                   log("World state elements translated", { count: translated.length });
                 }
               } catch (error) {
@@ -1368,6 +1371,7 @@
     // If translated, store original input for display
     if (originalInput) {
       await database.updateStoryEntry(userActionEntry.id, { originalInput });
+      await story.refreshEntry(userActionEntry.id);
     }
 
     // Emit UserInput event

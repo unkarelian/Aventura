@@ -36,6 +36,7 @@
     Scroll,
     Image,
     Volume2,
+    Languages,
   } from "lucide-svelte";
   import {
     promptService,
@@ -64,6 +65,7 @@
     type UpdateInfo,
     type UpdateProgress,
   } from "$lib/services/updater";
+  import { getSupportedLanguages } from "$lib/services/ai/translation";
 
   const baseTabs = [
     { id: "api", label: "API Connection", icon: Key },
@@ -1235,6 +1237,125 @@
                         class:translate-x-1={!settings.uiSettings.showReasoning}
                       ></span>
                     </button>
+                  </div>
+
+                  <!-- Translation Section -->
+                  <div class="border-t border-surface-700 pt-4 mt-4">
+                    <div class="flex items-center gap-2 mb-3">
+                      <Languages class="h-5 w-5 text-accent-400" />
+                      <h3 class="text-sm font-medium text-surface-200">
+                        Translation
+                      </h3>
+                    </div>
+                    <p class="text-xs text-surface-500 mb-3">
+                      Translate AI responses and world state to your language while keeping English prompts for optimal LLM performance.
+                    </p>
+
+                    <div class="space-y-3">
+                      <div class="flex items-center justify-between">
+                        <div>
+                          <label class="text-sm font-medium text-surface-300"
+                            >Enable Translation</label
+                          >
+                          <p class="text-xs text-surface-500">
+                            Translate AI responses to your language
+                          </p>
+                        </div>
+                        <button
+                          class="relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors"
+                          class:bg-accent-600={settings.translationSettings.enabled}
+                          class:bg-surface-600={!settings.translationSettings.enabled}
+                          onclick={() =>
+                            settings.updateTranslationSettings({
+                              enabled: !settings.translationSettings.enabled,
+                            })}
+                          aria-label="Toggle translation"
+                        >
+                          <span
+                            class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+                            class:translate-x-6={settings.translationSettings.enabled}
+                            class:translate-x-1={!settings.translationSettings.enabled}
+                          ></span>
+                        </button>
+                      </div>
+
+                      {#if settings.translationSettings.enabled}
+                        <div>
+                          <label class="mb-2 block text-sm font-medium text-surface-300">
+                            Target Language
+                          </label>
+                          <select
+                            class="input"
+                            value={settings.translationSettings.targetLanguage}
+                            onchange={(e) =>
+                              settings.updateTranslationSettings({
+                                targetLanguage: e.currentTarget.value,
+                              })}
+                          >
+                            {#each getSupportedLanguages() as lang}
+                              <option value={lang.code}>{lang.name}</option>
+                            {/each}
+                          </select>
+                          <p class="mt-1 text-xs text-surface-500">
+                            AI responses and world state will be translated to this language
+                          </p>
+                        </div>
+
+                        <div class="flex items-center justify-between">
+                          <div>
+                            <label class="text-sm font-medium text-surface-300"
+                              >Translate User Input</label
+                            >
+                            <p class="text-xs text-surface-500">
+                              Translate your input to English for the AI
+                            </p>
+                          </div>
+                          <button
+                            class="relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors"
+                            class:bg-accent-600={settings.translationSettings.translateUserInput}
+                            class:bg-surface-600={!settings.translationSettings.translateUserInput}
+                            onclick={() =>
+                              settings.updateTranslationSettings({
+                                translateUserInput: !settings.translationSettings.translateUserInput,
+                              })}
+                            aria-label="Toggle translate user input"
+                          >
+                            <span
+                              class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+                              class:translate-x-6={settings.translationSettings.translateUserInput}
+                              class:translate-x-1={!settings.translationSettings.translateUserInput}
+                            ></span>
+                          </button>
+                        </div>
+
+                        <div class="flex items-center justify-between">
+                          <div>
+                            <label class="text-sm font-medium text-surface-300"
+                              >Translate World State</label
+                            >
+                            <p class="text-xs text-surface-500">
+                              Translate character names, locations, items
+                            </p>
+                          </div>
+                          <button
+                            class="relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors"
+                            class:bg-accent-600={settings.translationSettings.translateWorldState}
+                            class:bg-surface-600={!settings.translationSettings.translateWorldState}
+                            onclick={() =>
+                              settings.updateTranslationSettings({
+                                translateWorldState: !settings.translationSettings.translateWorldState,
+                              })}
+                            aria-label="Toggle translate world state"
+                          >
+                            <span
+                              class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+                              class:translate-x-6={settings.translationSettings.translateWorldState}
+                              class:translate-x-1={!settings.translationSettings.translateWorldState}
+                            ></span>
+                          </button>
+                        </div>
+                      {/if}
+                    </div>
                   </div>
 
                   <div class="border-t border-surface-700 pt-4 mt-4">

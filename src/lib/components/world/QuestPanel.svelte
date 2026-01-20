@@ -203,7 +203,7 @@
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
                   <span class="break-words font-medium text-surface-100"
-                    >{beat.title}</span
+                    >{beat.translatedTitle ?? beat.title}</span
                   >
                   <span
                     class="rounded-full bg-surface-700 px-2 py-0.5 text-xs text-surface-400"
@@ -216,14 +216,14 @@
           </div>
 
           <!-- Section 2: Description -->
-          {#if beat.description}
+          {#if beat.description || beat.translatedDescription}
             <div
               class="mt-2 space-y-2 rounded-md bg-surface-800/40"
               class:max-h-24={isCollapsed && needsCollapse}
               class:overflow-hidden={isCollapsed && needsCollapse}
             >
               <p class="break-words text-sm text-surface-400">
-                {beat.description}
+                {beat.translatedDescription ?? beat.description}
               </p>
             </div>
           {/if}
@@ -345,19 +345,19 @@
                 <div class="{getStatusColor(beat.status)} flex-shrink-0">
                   <StatusIcon class="h-4 w-4" />
                 </div>
-                <span class="break-words text-surface-300">{beat.title}</span>
+                <span class="break-words text-surface-300">{beat.translatedTitle ?? beat.title}</span>
               </div>
             </div>
 
             <!-- Section 2: Description -->
-            {#if beat.description}
+            {#if beat.description || beat.translatedDescription}
               <div
                 class="mt-2 space-y-2 rounded-md bg-surface-800/40"
                 class:max-h-24={isCollapsed && needsCollapse}
                 class:overflow-hidden={isCollapsed && needsCollapse}
               >
                 <p class="break-words text-sm text-surface-400">
-                  {beat.description}
+                  {beat.translatedDescription ?? beat.description}
                 </p>
               </div>
             {/if}

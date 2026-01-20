@@ -702,6 +702,34 @@ class StoryStore {
   }
 
   /**
+   * Refresh world state (characters, locations, items, story beats) from the database.
+   * Used when background processes update translations.
+   */
+  async refreshWorldState(): Promise<void> {
+    if (!this.currentStory) return;
+
+    const storyId = this.currentStory.id;
+    const [characters, locations, items, storyBeats] = await Promise.all([
+      database.getCharacters(storyId),
+      database.getLocations(storyId),
+      database.getItems(storyId),
+      database.getStoryBeats(storyId),
+    ]);
+
+    this.characters = characters;
+    this.locations = locations;
+    this.items = items;
+    this.storyBeats = storyBeats;
+
+    log('World state refreshed', {
+      characters: characters.length,
+      locations: locations.length,
+      items: items.length,
+      storyBeats: storyBeats.length,
+    });
+  }
+
+  /**
    * Delete all entries from a given position onward.
    * Used for entry-only retry restore (persistent retry).
    */

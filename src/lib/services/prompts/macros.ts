@@ -15,6 +15,8 @@ import type {
   MacroOverride,
   VariantKey,
 } from './types';
+import { settings } from '$lib/stores/settings.svelte';
+import { getLanguageDisplayName } from '$lib/services/ai/translation';
 
 /**
  * Macro expansion engine
@@ -226,6 +228,19 @@ export class MacroEngine {
             return this.resolve('inlineImageInstructions', context, storyOverrides);
           }
           return '';
+        case 'targetLanguage':
+          // Derive from translation settings
+          if (settings.translationSettings?.enabled && settings.translationSettings?.targetLanguage) {
+            return getLanguageDisplayName(settings.translationSettings.targetLanguage);
+          }
+          return macro.defaultValue;
+        case 'sourceLanguage':
+          // Derive from translation settings
+          if (settings.translationSettings?.enabled && settings.translationSettings?.sourceLanguage) {
+            const code = settings.translationSettings.sourceLanguage;
+            return code === 'auto' ? 'the detected language' : getLanguageDisplayName(code);
+          }
+          return macro.defaultValue;
         default:
           // Unknown dynamic macro, fall through to default
           break;

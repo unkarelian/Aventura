@@ -471,7 +471,7 @@
             <!-- Name & Role -->
             <div class="min-w-0 flex-1">
               <p class="font-medium leading-tight text-surface-100">
-                {character.name}
+                {character.translatedName ?? character.name}
               </p>
               <div class="mt-0.5 flex items-center gap-1.5">
                 {#if isProtagonist}
@@ -583,8 +583,8 @@
                   {/each}
                 </div>
               {/if}
-              {#if character.description}
-                <p class="pt-0.5 text-surface-400">{character.description}</p>
+              {#if character.description || character.translatedDescription}
+                <p class="pt-0.5 text-surface-400">{character.translatedDescription ?? character.description}</p>
               {/if}
             </div>
           {/if}

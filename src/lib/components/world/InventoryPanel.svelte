@@ -210,7 +210,7 @@
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
                   <span class="break-words font-medium text-surface-100"
-                    >{item.name}</span
+                    >{item.translatedName ?? item.name}</span
                   >
                   {#if item.quantity > 1}
                     <span class="text-sm text-surface-400"
@@ -223,14 +223,14 @@
           </div>
 
           <!-- Section 2: Description -->
-          {#if item.description}
+          {#if item.description || item.translatedDescription}
             <div
               class="mt-2 space-y-2 rounded-md bg-surface-800/40"
               class:max-h-24={isCollapsed && needsCollapse}
               class:overflow-hidden={isCollapsed && needsCollapse}
             >
               <p class="break-words text-sm text-surface-400">
-                {item.description}
+                {item.translatedDescription ?? item.description}
               </p>
             </div>
           {/if}
@@ -393,7 +393,7 @@
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
                   <span class="break-words font-medium text-surface-100"
-                    >{item.name}</span
+                    >{item.translatedName ?? item.name}</span
                   >
                   {#if item.quantity > 1}
                     <span class="text-sm text-surface-400"
@@ -406,14 +406,14 @@
           </div>
 
           <!-- Section 2: Description -->
-          {#if item.description}
+          {#if item.description || item.translatedDescription}
             <div
               class="mt-2 space-y-2 rounded-md bg-surface-800/40"
               class:max-h-24={isCollapsed && needsCollapse}
               class:overflow-hidden={isCollapsed && needsCollapse}
             >
               <p class="break-words text-sm text-surface-400">
-                {item.description}
+                {item.translatedDescription ?? item.description}
               </p>
             </div>
           {/if}
@@ -572,7 +572,7 @@
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
                   <span class="break-words font-medium text-surface-100"
-                    >{item.name}</span
+                    >{item.translatedName ?? item.name}</span
                   >
                   {#if item.quantity > 1}
                     <span class="text-sm text-surface-400"
@@ -588,14 +588,14 @@
           </div>
 
           <!-- Section 2: Description -->
-          {#if item.description}
+          {#if item.description || item.translatedDescription}
             <div
               class="mt-2 space-y-2 rounded-md bg-surface-800/40"
               class:max-h-24={isCollapsed && needsCollapse}
               class:overflow-hidden={isCollapsed && needsCollapse}
             >
               <p class="break-words text-sm text-surface-400">
-                {item.description}
+                {item.translatedDescription ?? item.description}
               </p>
             </div>
           {/if}

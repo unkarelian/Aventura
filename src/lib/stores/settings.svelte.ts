@@ -1149,7 +1149,7 @@ export function getDefaultGenerationPresetsForProvider(provider: ProviderPreset,
       name: 'Translation',
       description: 'Text translation between languages',
       profileId: null,
-      model: 'deepseek/deepseek-v3.2',
+      model: 'google/gemini-2.0-flash-001',
       temperature: 0.3,
       maxTokens: 4096,
       reasoningEffort: 'off',
@@ -2080,6 +2080,7 @@ class SettingsStore {
       'x-ai/grok-4-fast',
       'z-ai/glm-4.7',
       'minimax/minimax-m2.1',
+      'google/gemini-2.0-flash-001',
     ];
 
     // Combine models in use with defaults, removing duplicates

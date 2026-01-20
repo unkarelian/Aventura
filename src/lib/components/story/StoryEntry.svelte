@@ -1187,30 +1187,34 @@
           onclick={handleContentClick}
         >
           {#if entry.type === "narration"}
+            {@const displayContent = entry.translatedContent ?? entry.content}
             {#if visualProseMode && inlineImageMode}
               <!-- Both Visual Prose and Inline Image mode -->
               {@html processVisualProseWithInlineImages(
-                entry.content,
+                displayContent,
                 embeddedImages,
                 entry.id,
               )}
             {:else if visualProseMode}
               <!-- Visual Prose mode only -->
               {@html processVisualProseWithImages(
-                entry.content,
+                displayContent,
                 embeddedImages,
                 entry.id,
               )}
             {:else if inlineImageMode}
               <!-- Inline Image mode only -->
               {@html processContentWithInlineImages(
-                entry.content,
+                displayContent,
                 embeddedImages,
               )}
             {:else}
               <!-- Standard mode with analyzed images -->
-              {@html processContentWithImages(entry.content, embeddedImages)}
+              {@html processContentWithImages(displayContent, embeddedImages)}
             {/if}
+          {:else if entry.type === "user_action"}
+            <!-- User action: show original input (before translation) -->
+            {@html parseMarkdown(entry.originalInput ?? entry.content)}
           {:else}
             {@html parseMarkdown(entry.content)}
           {/if}

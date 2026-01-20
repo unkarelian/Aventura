@@ -241,18 +241,18 @@
             >
           </button>
           <h4 class="mt-1 break-words font-medium text-surface-100">
-            {location.name}
+            {location.translatedName ?? location.name}
           </h4>
 
           <!-- Section 2: Description -->
-          {#if location.description}
+          {#if location.description || location.translatedDescription}
             <div
               class="mt-1 space-y-2 rounded-md bg-surface-800/40"
               class:max-h-24={isCollapsed && needsCollapse}
               class:overflow-hidden={isCollapsed && needsCollapse}
             >
               <p class="break-words text-sm text-surface-400">
-                {location.description}
+                {location.translatedDescription ?? location.description}
               </p>
             </div>
           {/if}
