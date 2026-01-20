@@ -2,6 +2,7 @@
   import { story } from '$lib/stores/story.svelte';
   import { ui } from '$lib/stores/ui.svelte';
   import { settings } from '$lib/stores/settings.svelte';
+  import { fade } from 'svelte/transition';
   import { Loader2 } from 'lucide-svelte';
   import StoryEntry from './StoryEntry.svelte';
   import StreamingEntry from './StreamingEntry.svelte';
@@ -106,11 +107,25 @@
   });
 </script>
 
-<div class="flex h-full flex-col">
+<div class="flex h-full flex-col relative overflow-hidden">
+  <!-- Dynamic Background Layer -->
+  <div class="absolute inset-0 pointer-events-none overflow-hidden">
+    {#key story.currentBackgroundImage}
+      <div 
+        class="background-image-layer"
+        in:fade={{ duration: 1500 }}
+        out:fade={{ duration: 1500 }}
+        style="background-image: url('{story.currentBackgroundImage || ''}');"
+      ></div>
+    {/key}
+    <!-- Content Overlay Gradient (separated for smooth cross-fade of images underneath) -->
+    <div class="absolute inset-0 background-overlay"></div>
+  </div>
+
   <!-- Story entries container -->
   <div
     bind:this={storyContainer}
-    class="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4"
+    class="story-entries-container flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4 relative z-10 bg-transparent"
     onscroll={handleScroll}
   >
     <div class="mx-auto max-w-3xl space-y-3 sm:space-y-4">
@@ -171,9 +186,29 @@
   </div>
 
   <!-- Action input area -->
-  <div class="border-t border-surface-700 bg-surface-800 px-3 sm:pl-6 sm:pr-8 pt-2 pb-1 sm:py-4 pb-safe">
+  <div class="border-t px-3 sm:pl-6 sm:pr-8 pt-2 pb-1 sm:py-4 pb-safe relative z-20 {story.currentBackgroundImage ? 'border-surface-700/50 bg-surface-900/60 backdrop-blur-md' : 'border-surface-700 bg-surface-800'}">
     <div class="mx-auto max-w-[48rem]">
       <ActionInput />
     </div>
   </div>
 </div>
+
+<style>
+  .story-entries-container {
+    background-color: transparent;
+  }
+
+  .background-overlay {
+    background-image: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.85));
+    transition: background-image 0.3s ease;
+  }
+
+  .background-image-layer {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    background-attachment: fixed;
+  }
+</style>
