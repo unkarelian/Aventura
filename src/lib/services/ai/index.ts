@@ -437,8 +437,8 @@ class AIService {
 
       const result = response.content.trim();
       // Template returns empty string or short response if no change, otherwise the prompt
-      if (result && result.length > 50 && !result.toLowerCase().includes('no change')) {
-        log('Background change detected, prompt:', result.substring(0, 50) + '...');
+      if (result && result.length > 50) {
+        log('Background change detected, prompt:', result);
         return result;
       }
     } catch (error) {
@@ -453,7 +453,7 @@ class AIService {
    * Returns the base64 encoded image data.
    */
   async generateBackgroundImage(prompt: string): Promise<string | null> {
-    log('generateBackgroundImage called', { prompt: prompt.substring(0, 50) + '...' });
+    log('generateBackgroundImage called', prompt );
 
     if (!ImageGenerationService.isEnabled()) {
       log('Image generation not enabled');
