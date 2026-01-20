@@ -975,7 +975,7 @@
                 fullResponse,
               );
 
-            if (backgroundPrompt && backgroundPrompt.length > 50) {
+            if (backgroundPrompt) {
               log("Background change required, generating image...");
               const imageData =
                 await aiService.generateBackgroundImage(backgroundPrompt);

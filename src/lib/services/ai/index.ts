@@ -436,8 +436,8 @@ class AIService {
       });
 
       const result = response.content.trim();
-      // Template returns empty string if no change, otherwise the prompt
-      if (result && result.length > 5 && !result.toLowerCase().includes('no change')) {
+      // Template returns empty string or short response if no change, otherwise the prompt
+      if (result && result.length > 50 && !result.toLowerCase().includes('no change')) {
         log('Background change detected, prompt:', result.substring(0, 50) + '...');
         return result;
       }
