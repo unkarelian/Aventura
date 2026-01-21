@@ -561,7 +561,7 @@ export function getDefaultImageGenerationSettings(): ImageGenerationServiceSetti
 
 export function getDefaultImageGenerationSettingsForProvider(provider: ProviderPreset, customModel?: string | null): ImageGenerationServiceSettings {
   const promptProfileId = provider === 'nanogpt' ? DEFAULT_NANOGPT_PROFILE_ID : DEFAULT_OPENROUTER_PROFILE_ID;
-  
+
   // For custom provider, use provided model or fall back to placeholder
   let promptModel: string;
   if (provider === 'custom') {
@@ -606,6 +606,7 @@ export interface TTSServiceSettings {
   removeHtmlTags: boolean;        // Removes HTML tags from text (default: false)
   removeAllHtmlContent: boolean;     // Removes content within all HTML tags (default: false)
   htmlTagsToRemoveContent: string; // Specific HTML tags to remove content from (default: span, div)
+  provider: 'openai' | 'google';   // TTS Provider (default: 'openai')
 }
 
 export function getDefaultTTSSettings(): TTSServiceSettings {
@@ -621,6 +622,7 @@ export function getDefaultTTSSettings(): TTSServiceSettings {
     removeHtmlTags: false,
     removeAllHtmlContent: false,
     htmlTagsToRemoveContent: 'span, div',
+    provider: 'openai',
   };
 }
 
@@ -637,6 +639,7 @@ export function getDefaultTTSSettingsForProvider(provider: ProviderPreset, custo
     removeHtmlTags: false,
     removeAllHtmlContent: false,
     htmlTagsToRemoveContent: 'span, div',
+    provider: 'openai',
   };
 }
 
@@ -1929,7 +1932,7 @@ class SettingsStore {
   async setDefaultProfile(profileId: string | undefined) {
     const previousProfileId = this.apiSettings.defaultProfileId;
     this.apiSettings.defaultProfileId = profileId;
-    
+
     if (profileId) {
       await database.setSetting('default_profile_id', profileId);
     } else {
@@ -2892,7 +2895,7 @@ class SettingsStore {
   getFirstModelFromDefaultProfile(): string | null {
     const defaultProfile = this.getDefaultProfile();
     if (!defaultProfile) return null;
-    
+
     // Prefer fetched models, then custom models
     const models = [...defaultProfile.fetchedModels, ...defaultProfile.customModels];
     return models.length > 0 ? models[0] : null;
@@ -2960,7 +2963,7 @@ class SettingsStore {
    */
   generationPresetsMatchDefaults(): boolean {
     const defaults = getDefaultGenerationPresetsForProvider(this.providerPreset);
-    
+
     for (const preset of this.generationPresets) {
       const defaultPreset = defaults.find(d => d.id === preset.id);
       if (!defaultPreset) continue;
@@ -2977,7 +2980,7 @@ class SettingsStore {
    */
   systemServicesMatchDefaults(): boolean {
     const defaults = getDefaultSystemServicesSettingsForProvider(this.getEffectiveProvider());
-    
+
     // Helper to compare a service's core generation settings
     const settingsMatch = (
       current: { model: string; temperature: number; reasoningEffort: string; providerOnly: string[] },

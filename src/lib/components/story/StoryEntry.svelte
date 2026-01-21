@@ -18,6 +18,7 @@
     Bookmark,
     Volume2,
   } from "lucide-svelte";
+  import { aiTTSService } from "$lib/services/ai/tts";
   import { parseMarkdown } from "$lib/utils/markdown";
   import { slide } from "svelte/transition";
   import {
@@ -45,17 +46,19 @@
 
   // Separate token counts for content and reasoning
   const contentTokens = $derived(entry.metadata?.tokenCount ?? 0);
-  const reasoningTokens = $derived(entry.reasoning ? countTokens(entry.reasoning) : 0);
+  const reasoningTokens = $derived(
+    entry.reasoning ? countTokens(entry.reasoning) : 0,
+  );
 
   // Check if reasoning is enabled in API settings
   const isReasoningEnabled = $derived(
-    settings.apiSettings.reasoningEffort !== 'off' && settings.apiSettings.enableThinking
+    settings.apiSettings.reasoningEffort !== "off" &&
+      settings.apiSettings.enableThinking,
   );
 
   // TTS generation state
   let isGeneratingTTS = $state(false);
   let isPlayingTTS = $state(false);
-  let currentAudioElement: HTMLAudioElement | null = null;
 
   // Check if this entry is an error entry (either tracked or detected by content)
   const isErrorEntry = $derived(
@@ -806,8 +809,8 @@
    */
   async function handleTTSToggle() {
     // If audio is playing, stop it
-    if (isPlayingTTS && currentAudioElement) {
-      currentAudioElement.pause();
+    if (isPlayingTTS) {
+      aiTTSService.stopPlayback();
       isPlayingTTS = false;
       return;
     }
@@ -819,22 +822,11 @@
       return;
     }
 
-    if (!ttsSettings.endpoint || !ttsSettings.apiKey) {
-      alert(
-        "TTS is not properly configured. Please set the endpoint and API key in settings.",
-      );
-      return;
-    }
-
     isGeneratingTTS = true;
 
     try {
-      // Stop any existing audio playback
-      if (currentAudioElement) {
-        currentAudioElement.pause();
-        currentAudioElement = null;
-        isPlayingTTS = false;
-      }
+      // Initialize/Update service with current settings
+      await aiTTSService.initialize(ttsSettings);
 
       // Use translated content if available, otherwise use original content
       const ttsContent = entry.translatedContent ?? entry.content;
@@ -861,55 +853,17 @@
           )
         : textToNarrate;
 
-      console.log("[StoryEntry] Generating TTS with text:", finalNarrationText);
-
-      const response = await fetch(ttsSettings.endpoint, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${ttsSettings.apiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: ttsSettings.model || "tts-1",
-          input: finalNarrationText,
-          voice: ttsSettings.voice || "alloy",
-          speed: ttsSettings.speed || 1.0,
-          response_format: "mp3",
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData.error?.message ||
-            `TTS generation failed: ${response.statusText}`,
-        );
-      }
-
-      const audioBlob = await response.blob();
-      const audioUrl = URL.createObjectURL(audioBlob);
-
-      // Create and play audio
-      currentAudioElement = new Audio(audioUrl);
-      currentAudioElement.play();
       isPlayingTTS = true;
+      isGeneratingTTS = false;
 
-      // Handle audio end
-      currentAudioElement.addEventListener("ended", () => {
-        URL.revokeObjectURL(audioUrl);
-        currentAudioElement = null;
-        isPlayingTTS = false;
-      });
+      await aiTTSService.generateAndPlay(finalNarrationText);
 
-      // Handle pause
-      currentAudioElement.addEventListener("pause", () => {
-        if (!currentAudioElement?.ended) {
-          isPlayingTTS = false;
-        }
-      });
+      isPlayingTTS = false;
     } catch (error) {
-      console.error("[StoryEntry] TTS generation failed:", error);
-      alert(error instanceof Error ? error.message : "Failed to generate TTS");
+      console.error("[StoryEntry] TTS failed:", error);
+      alert(error instanceof Error ? error.message : "Failed to play TTS");
+      isPlayingTTS = false;
+      isGeneratingTTS = false;
     } finally {
       isGeneratingTTS = false;
     }
@@ -940,17 +894,17 @@
   }
 
   $effect(() => {
-    if (entry.type === 'narration' && isLatestEntry && ui.streamingReasoningExpanded) {
+    if (
+      entry.type === "narration" &&
+      isLatestEntry &&
+      ui.streamingReasoningExpanded
+    ) {
       ui.transferStreamingReasoningState(entry.id);
     }
   });
 </script>
 
-<div
-  class="group rounded-lg border-l-4 px-4 pb-4 pt-3 {styles[
-    entry.type
-  ]}"
->
+<div class="group rounded-lg border-l-4 px-4 pb-4 pt-3 {styles[entry.type]}">
   <!-- Header row: Label + metadata on left, action buttons on right -->
   <div class="flex items-center gap-2 mb-2">
     <!-- Left side: Entry type indicator + reasoning toggle -->
@@ -964,14 +918,21 @@
     {:else}
       <Icon class="h-4 w-4 shrink-0 translate-y-px text-surface-500" />
     {/if}
-    
+
     <!-- Reasoning toggle (inline icon in header) - only show if reasoning is enabled -->
     {#if isReasoningEnabled && entry.reasoning}
-      <ReasoningBlock content={entry.reasoning} isStreaming={false} entryId={entry.id} showToggleOnly={true} />
+      <ReasoningBlock
+        content={entry.reasoning}
+        isStreaming={false}
+        entryId={entry.id}
+        showToggleOnly={true}
+      />
     {/if}
-    
+
     <!-- Token count badge (shows 0 if no tokens) -->
-    <span class="text-[11px] bg-surface-700/50 px-1.5 py-0.5 rounded tabular-nums">
+    <span
+      class="text-[11px] bg-surface-700/50 px-1.5 py-0.5 rounded tabular-nums"
+    >
       {#if isReasoningEnabled && reasoningTokens > 0}
         <span class="text-surface-500">{reasoningTokens}r</span>
         <span class="text-surface-600 mx-0.5">+</span>
@@ -1051,186 +1012,188 @@
 
   <!-- Content area -->
   <div class="min-w-0">
-
-      {#if isEditing}
-        <div class="space-y-2">
-          <textarea
-            bind:value={editContent}
-            onkeydown={handleKeydown}
-            class="input min-h-[100px] w-full resize-y text-base"
-            rows="4"
-          ></textarea>
-          <div class="flex gap-2">
-            <button
-              onclick={saveEdit}
-              class="btn btn-primary flex items-center gap-1.5 text-sm min-h-[40px] px-3"
-            >
-              <Check class="h-4 w-4" />
-              Save
-            </button>
-            <button
-              onclick={cancelEdit}
-              class="btn btn-secondary flex items-center gap-1.5 text-sm min-h-[40px] px-3"
-            >
-              <X class="h-4 w-4" />
-              Cancel
-            </button>
-          </div>
-          <p class="text-xs text-surface-500 hidden sm:block">
-            Ctrl+Enter to save, Esc to cancel
-          </p>
-        </div>
-      {:else if isDeleting}
-        <div class="space-y-2">
-          <p class="text-sm text-surface-300">Delete this entry?</p>
-          <div class="flex gap-2">
-            <button
-              onclick={confirmDelete}
-              class="btn flex items-center gap-1.5 text-sm bg-red-500/20 text-red-400 hover:bg-red-500/30 min-h-[40px] px-3"
-            >
-              <Trash2 class="h-4 w-4" />
-              Delete
-            </button>
-            <button
-              onclick={() => (isDeleting = false)}
-              class="btn btn-secondary flex items-center gap-1.5 text-sm min-h-[40px] px-3"
-            >
-              <X class="h-4 w-4" />
-              Cancel
-            </button>
-          </div>
-        </div>
-      {:else if isBranching}
-        <div class="space-y-2">
-          <p class="text-sm text-surface-300">
-            Create a branch from this point:
-          </p>
-          <input
-            type="text"
-            class="input w-full text-sm"
-            placeholder="Branch name..."
-            bind:value={branchName}
-            onkeydown={(e) => {
-              if (e.key === "Enter") handleCreateBranch();
-              if (e.key === "Escape") cancelBranch();
-            }}
-          />
-          <div class="flex gap-2">
-            <button
-              onclick={handleCreateBranch}
-              disabled={!branchName.trim()}
-              class="btn flex items-center gap-1.5 text-sm bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-50 min-h-[40px] px-3"
-            >
-              <GitBranch class="h-4 w-4" />
-              Create Branch
-            </button>
-            <button
-              onclick={cancelBranch}
-              class="btn btn-secondary flex items-center gap-1.5 text-sm min-h-[40px] px-3"
-            >
-              <X class="h-4 w-4" />
-              Cancel
-            </button>
-          </div>
-          <p class="text-xs text-surface-500">
-            This will create a new timeline from this checkpoint.
-          </p>
-        </div>
-      {:else if isCreatingCheckpoint}
-        <div class="space-y-2">
-          <p class="text-sm text-surface-300">
-            Create a checkpoint at this point:
-          </p>
-          <input
-            type="text"
-            class="input w-full text-sm"
-            placeholder="Checkpoint name..."
-            bind:value={checkpointName}
-            onkeydown={(e) => {
-              if (e.key === "Enter") handleCreateCheckpoint();
-              if (e.key === "Escape") cancelCheckpoint();
-            }}
-          />
-          <div class="flex gap-2">
-            <button
-              onclick={handleCreateCheckpoint}
-              disabled={!checkpointName.trim()}
-              class="btn flex items-center gap-1.5 text-sm bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 disabled:opacity-50 min-h-[40px] px-3"
-            >
-              <Bookmark class="h-4 w-4" />
-              Create Checkpoint
-            </button>
-            <button
-              onclick={cancelCheckpoint}
-              class="btn btn-secondary flex items-center gap-1.5 text-sm min-h-[40px] px-3"
-            >
-              <X class="h-4 w-4" />
-              Cancel
-            </button>
-          </div>
-          <p class="text-xs text-surface-500">
-            Checkpoints save the current story state and allow branching from
-            this point.
-          </p>
-        </div>
-      {:else}
-        <!-- Reasoning content panel (between header and story text) -->
-        {#if entry.reasoning}
-          <ReasoningBlock content={entry.reasoning} isStreaming={false} entryId={entry.id} showToggleOnly={false} />
-        {/if}
-
-        <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
-        <div
-          class="story-text prose-content"
-          class:visual-prose-container={visualProseMode &&
-            entry.type === "narration"}
-          onclick={handleContentClick}
-        >
-          {#if entry.type === "narration"}
-            {@const displayContent = entry.translatedContent ?? entry.content}
-            {#if visualProseMode && inlineImageMode}
-              <!-- Both Visual Prose and Inline Image mode -->
-              {@html processVisualProseWithInlineImages(
-                displayContent,
-                embeddedImages,
-                entry.id,
-              )}
-            {:else if visualProseMode}
-              <!-- Visual Prose mode only -->
-              {@html processVisualProseWithImages(
-                displayContent,
-                embeddedImages,
-                entry.id,
-              )}
-            {:else if inlineImageMode}
-              <!-- Inline Image mode only -->
-              {@html processContentWithInlineImages(
-                displayContent,
-                embeddedImages,
-              )}
-            {:else}
-              <!-- Standard mode with analyzed images -->
-              {@html processContentWithImages(displayContent, embeddedImages)}
-            {/if}
-          {:else if entry.type === "user_action"}
-            <!-- User action: show original input (before translation) -->
-            {@html parseMarkdown(entry.originalInput ?? entry.content)}
-          {:else}
-            {@html parseMarkdown(entry.content)}
-          {/if}
-        </div>
-
-        {#if isErrorEntry}
+    {#if isEditing}
+      <div class="space-y-2">
+        <textarea
+          bind:value={editContent}
+          onkeydown={handleKeydown}
+          class="input min-h-[100px] w-full resize-y text-base"
+          rows="4"
+        ></textarea>
+        <div class="flex gap-2">
           <button
-            onclick={handleRetryFromEntry}
-            disabled={ui.isGenerating}
-            class="mt-3 btn flex items-center gap-1.5 text-sm bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50"
+            onclick={saveEdit}
+            class="btn btn-primary flex items-center gap-1.5 text-sm min-h-[40px] px-3"
           >
-            <RefreshCw class="h-4 w-4" />
-            Retry
+            <Check class="h-4 w-4" />
+            Save
           </button>
-        {/if}
+          <button
+            onclick={cancelEdit}
+            class="btn btn-secondary flex items-center gap-1.5 text-sm min-h-[40px] px-3"
+          >
+            <X class="h-4 w-4" />
+            Cancel
+          </button>
+        </div>
+        <p class="text-xs text-surface-500 hidden sm:block">
+          Ctrl+Enter to save, Esc to cancel
+        </p>
+      </div>
+    {:else if isDeleting}
+      <div class="space-y-2">
+        <p class="text-sm text-surface-300">Delete this entry?</p>
+        <div class="flex gap-2">
+          <button
+            onclick={confirmDelete}
+            class="btn flex items-center gap-1.5 text-sm bg-red-500/20 text-red-400 hover:bg-red-500/30 min-h-[40px] px-3"
+          >
+            <Trash2 class="h-4 w-4" />
+            Delete
+          </button>
+          <button
+            onclick={() => (isDeleting = false)}
+            class="btn btn-secondary flex items-center gap-1.5 text-sm min-h-[40px] px-3"
+          >
+            <X class="h-4 w-4" />
+            Cancel
+          </button>
+        </div>
+      </div>
+    {:else if isBranching}
+      <div class="space-y-2">
+        <p class="text-sm text-surface-300">Create a branch from this point:</p>
+        <input
+          type="text"
+          class="input w-full text-sm"
+          placeholder="Branch name..."
+          bind:value={branchName}
+          onkeydown={(e) => {
+            if (e.key === "Enter") handleCreateBranch();
+            if (e.key === "Escape") cancelBranch();
+          }}
+        />
+        <div class="flex gap-2">
+          <button
+            onclick={handleCreateBranch}
+            disabled={!branchName.trim()}
+            class="btn flex items-center gap-1.5 text-sm bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 disabled:opacity-50 min-h-[40px] px-3"
+          >
+            <GitBranch class="h-4 w-4" />
+            Create Branch
+          </button>
+          <button
+            onclick={cancelBranch}
+            class="btn btn-secondary flex items-center gap-1.5 text-sm min-h-[40px] px-3"
+          >
+            <X class="h-4 w-4" />
+            Cancel
+          </button>
+        </div>
+        <p class="text-xs text-surface-500">
+          This will create a new timeline from this checkpoint.
+        </p>
+      </div>
+    {:else if isCreatingCheckpoint}
+      <div class="space-y-2">
+        <p class="text-sm text-surface-300">
+          Create a checkpoint at this point:
+        </p>
+        <input
+          type="text"
+          class="input w-full text-sm"
+          placeholder="Checkpoint name..."
+          bind:value={checkpointName}
+          onkeydown={(e) => {
+            if (e.key === "Enter") handleCreateCheckpoint();
+            if (e.key === "Escape") cancelCheckpoint();
+          }}
+        />
+        <div class="flex gap-2">
+          <button
+            onclick={handleCreateCheckpoint}
+            disabled={!checkpointName.trim()}
+            class="btn flex items-center gap-1.5 text-sm bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 disabled:opacity-50 min-h-[40px] px-3"
+          >
+            <Bookmark class="h-4 w-4" />
+            Create Checkpoint
+          </button>
+          <button
+            onclick={cancelCheckpoint}
+            class="btn btn-secondary flex items-center gap-1.5 text-sm min-h-[40px] px-3"
+          >
+            <X class="h-4 w-4" />
+            Cancel
+          </button>
+        </div>
+        <p class="text-xs text-surface-500">
+          Checkpoints save the current story state and allow branching from this
+          point.
+        </p>
+      </div>
+    {:else}
+      <!-- Reasoning content panel (between header and story text) -->
+      {#if entry.reasoning}
+        <ReasoningBlock
+          content={entry.reasoning}
+          isStreaming={false}
+          entryId={entry.id}
+          showToggleOnly={false}
+        />
       {/if}
+
+      <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+      <div
+        class="story-text prose-content"
+        class:visual-prose-container={visualProseMode &&
+          entry.type === "narration"}
+        onclick={handleContentClick}
+      >
+        {#if entry.type === "narration"}
+          {@const displayContent = entry.translatedContent ?? entry.content}
+          {#if visualProseMode && inlineImageMode}
+            <!-- Both Visual Prose and Inline Image mode -->
+            {@html processVisualProseWithInlineImages(
+              displayContent,
+              embeddedImages,
+              entry.id,
+            )}
+          {:else if visualProseMode}
+            <!-- Visual Prose mode only -->
+            {@html processVisualProseWithImages(
+              displayContent,
+              embeddedImages,
+              entry.id,
+            )}
+          {:else if inlineImageMode}
+            <!-- Inline Image mode only -->
+            {@html processContentWithInlineImages(
+              displayContent,
+              embeddedImages,
+            )}
+          {:else}
+            <!-- Standard mode with analyzed images -->
+            {@html processContentWithImages(displayContent, embeddedImages)}
+          {/if}
+        {:else if entry.type === "user_action"}
+          <!-- User action: show original input (before translation) -->
+          {@html parseMarkdown(entry.originalInput ?? entry.content)}
+        {:else}
+          {@html parseMarkdown(entry.content)}
+        {/if}
+      </div>
+
+      {#if isErrorEntry}
+        <button
+          onclick={handleRetryFromEntry}
+          disabled={ui.isGenerating}
+          class="mt-3 btn flex items-center gap-1.5 text-sm bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50"
+        >
+          <RefreshCw class="h-4 w-4" />
+          Retry
+        </button>
+      {/if}
+    {/if}
   </div>
 </div>
 

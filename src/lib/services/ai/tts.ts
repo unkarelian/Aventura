@@ -1,22 +1,27 @@
 /**
  * Text-To-Speech (TTS) Service
- * Provides audio generation via OpenAI-compatible APIs with streaming support.
+ * Provides audio generation via OpenAI-compatible APIs (and others) with streaming support.
  * Designed for extensibility to support multiple TTS providers.
  */
 
-import { OPENROUTER_API_URL } from './openrouter';
-import type { APIProfile } from '$lib/types';
+import { OPENROUTER_API_URL } from "./openrouter";
+import type { APIProfile } from "$lib/types";
+import { corsFetch } from "$lib/services/discovery/utils";
 
-// TTS Configuration
+// TTS Configuration - matches TTSServiceSettings in settings.svelte.ts
 export interface TTSSettings {
   enabled: boolean;
-  profileId: string | null;
   endpoint: string;
   apiKey: string;
   model: string;
   voice: string;
   speed: number;
-  autonarrate: boolean;
+  autoPlay: boolean;
+  excludedCharacters: string;
+  removeHtmlTags: boolean;
+  removeAllHtmlContent: boolean;
+  htmlTagsToRemoveContent: string;
+  provider: "openai" | "google";
 }
 
 export interface TTSVoice {
@@ -26,7 +31,7 @@ export interface TTSVoice {
 }
 
 export interface TTSStreamChunk {
-  type: 'data' | 'end' | 'error';
+  type: "data" | "end" | "error";
   data?: ArrayBuffer;
   error?: string;
 }
@@ -35,6 +40,8 @@ export interface TTSStreamChunk {
  * Base TTS Provider - extend this for custom implementations
  */
 export abstract class TTSProvider {
+  private currentAudio: HTMLAudioElement | null = null;
+
   abstract get name(): string;
 
   /**
@@ -46,6 +53,247 @@ export abstract class TTSProvider {
    * Generate TTS audio and return as blob
    */
   abstract generateSpeech(text: string, voice: string): Promise<Blob>;
+
+  /**
+   * Play audio blob using HTML Audio element
+   * IMPORTANT: We create a fresh audio element each time to avoid crashes
+   * on Linux with newer GStreamer versions when changing audio source.
+   * @param blob - The audio blob to play
+   * @param onProgress - Optional callback for playback progress
+   * @param playbackRate - Optional playback speed
+   */
+  async playAudio(
+    blob: Blob,
+    onProgress?: (progress: number) => void,
+    playbackRate = 1.0,
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      // Stop any previous playback and destroy old element
+      this.stopAudio();
+
+      const url = URL.createObjectURL(blob);
+
+      // Create a FRESH audio element each time (workaround for GStreamer crash)
+      const audio = new Audio();
+      this.currentAudio = audio;
+
+      const cleanup = () => {
+        URL.revokeObjectURL(url);
+        audio.oncanplaythrough = null;
+        audio.onended = null;
+        audio.onerror = null;
+        audio.ontimeupdate = null;
+      };
+
+      audio.onerror = (e) => {
+        // Only handle error if this is still the current audio element
+        // (prevents false errors when stopAudio() clears an old element)
+        if (this.currentAudio !== audio) return;
+
+        console.error("[TTS] Audio playback error:", e);
+        cleanup();
+        this.currentAudio = null;
+        reject(new Error("Failed to play audio"));
+      };
+
+      audio.onended = () => {
+        // Only handle ended if this is still the current audio element
+        if (this.currentAudio !== audio) return;
+
+        cleanup();
+        this.currentAudio = null;
+        resolve();
+      };
+
+      if (onProgress) {
+        audio.ontimeupdate = () => {
+          if (audio.duration) {
+            onProgress((audio.currentTime / audio.duration) * 100);
+          }
+        };
+      }
+
+      // Wait for audio to be ready before setting playbackRate and playing
+      audio.oncanplaythrough = () => {
+        // Only handle if this is still the current audio element
+        if (this.currentAudio !== audio) return;
+
+        try {
+          if (playbackRate !== 1.0) {
+            audio.playbackRate = playbackRate;
+          }
+          audio.play().catch((err) => {
+            if (this.currentAudio !== audio) return;
+            console.error("[TTS] Play failed:", err);
+            cleanup();
+            this.currentAudio = null;
+            reject(err);
+          });
+        } catch (err) {
+          if (this.currentAudio !== audio) return;
+          console.error("[TTS] Error during playback setup:", err);
+          cleanup();
+          this.currentAudio = null;
+          reject(err);
+        }
+      };
+
+      audio.src = url;
+      audio.load();
+    });
+  }
+
+  /**
+   * Stop current playback
+   */
+  stopAudio(): void {
+    if (this.currentAudio) {
+      const audio = this.currentAudio;
+      // Clear reference FIRST to prevent callbacks from firing
+      this.currentAudio = null;
+
+      try {
+        // Clear all handlers to prevent any callbacks
+        audio.oncanplaythrough = null;
+        audio.onended = null;
+        audio.onerror = null;
+        audio.ontimeupdate = null;
+
+        audio.pause();
+        audio.src = '';
+      } catch (e) {
+        // Ignore errors during cleanup
+      }
+    }
+  }
+
+  /**
+   * Get current playback state
+   */
+  getPlaybackState(): { playing: boolean; progress: number; duration: number } {
+    if (!this.currentAudio) {
+      return { playing: false, progress: 0, duration: 0 };
+    }
+    return {
+      playing: !this.currentAudio.paused,
+      progress: this.currentAudio.currentTime,
+      duration: this.currentAudio.duration || 0,
+    };
+  }
+}
+
+/**
+ * Split text into chunks for TTS (Google Translate has ~200 char limit)
+ * Similar to SillyTavern's splitRecursive approach
+ */
+function splitTextForTTS(text: string, maxLength = 200): string[] {
+  if (!text || text.length === 0) return [];
+  if (text.length <= maxLength) return [text];
+
+  const chunks: string[] = [];
+  // Priority: paragraph breaks, sentence ends, commas, spaces
+  const delimiters = ["\n\n", "\n", ". ", "! ", "? ", ", ", " "];
+
+  let remaining = text;
+  while (remaining.length > 0) {
+    if (remaining.length <= maxLength) {
+      chunks.push(remaining);
+      break;
+    }
+
+    let splitIndex = -1;
+    // Try each delimiter in priority order
+    for (const delimiter of delimiters) {
+      const searchRange = remaining.substring(0, maxLength);
+      const lastIndex = searchRange.lastIndexOf(delimiter);
+      if (lastIndex > 0) {
+        splitIndex = lastIndex + delimiter.length;
+        break;
+      }
+    }
+
+    // If no delimiter found, force split at maxLength
+    if (splitIndex === -1) {
+      splitIndex = maxLength;
+    }
+
+    const chunk = remaining.substring(0, splitIndex).trim();
+    if (chunk.length > 0) {
+      chunks.push(chunk);
+    }
+    remaining = remaining.substring(splitIndex).trim();
+  }
+
+  return chunks;
+}
+
+export const GOOGLE_TRANSLATE_LANGUAGES: TTSVoice[] = [
+  { name: "English (US)", id: "en", lang: "en" },
+  { name: "English (UK)", id: "en-GB", lang: "en-GB" },
+  { name: "Italian", id: "it", lang: "it" },
+  { name: "Spanish", id: "es", lang: "es" },
+  { name: "French", id: "fr", lang: "fr" },
+  { name: "German", id: "de", lang: "de" },
+  { name: "Japanese", id: "ja", lang: "ja" },
+  { name: "Korean", id: "ko", lang: "ko" },
+  { name: "Chinese (Simplified)", id: "zh-CN", lang: "zh-CN" },
+  { name: "Chinese (Traditional)", id: "zh-TW", lang: "zh-TW" },
+  { name: "Russian", id: "ru", lang: "ru" },
+  { name: "Portuguese", id: "pt", lang: "pt" },
+  { name: "Dutch", id: "nl", lang: "nl" },
+  { name: "Polish", id: "pl", lang: "pl" },
+  { name: "Turkish", id: "tr", lang: "tr" },
+];
+
+/**
+ * Google Translate TTS Provider
+ * Unofficial API usage (similar to SillyTavern implementation)
+ */
+export class GoogleTranslateTTSProvider extends TTSProvider {
+  private settings: TTSSettings;
+
+  constructor(settings: TTSSettings) {
+    super();
+    this.settings = settings;
+  }
+
+  override get name(): string {
+    return "Google Translate";
+  }
+
+  override async getAvailableVoices(): Promise<TTSVoice[]> {
+    return GOOGLE_TRANSLATE_LANGUAGES;
+  }
+
+  override async generateSpeech(text: string, voice: string): Promise<Blob> {
+    if (!text || text.trim().length === 0) {
+      throw new Error("TTS: Cannot generate speech for empty text");
+    }
+
+    // Split text into chunks for Google's ~200 char limit
+    const chunks = splitTextForTTS(text, 200);
+    const audioBuffers: ArrayBuffer[] = [];
+
+    for (const chunk of chunks) {
+      const encodedText = encodeURIComponent(chunk);
+      const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodedText}&tl=${voice}&client=tw-ob`;
+
+      // Use corsFetch to bypass CORS restrictions in Tauri
+      const response = await corsFetch(url);
+
+      if (!response.ok) {
+        const error = await response.text();
+        throw new Error(
+          `Google TTS generation failed: ${response.status} - ${error}`,
+        );
+      }
+
+      audioBuffers.push(await response.arrayBuffer());
+    }
+
+    // Concatenate all audio chunks into a single blob
+    return new Blob(audioBuffers, { type: "audio/mpeg" });
+  }
 }
 
 /**
@@ -55,16 +303,14 @@ export abstract class TTSProvider {
 export class OpenAICompatibleTTSProvider extends TTSProvider {
   private settings: TTSSettings;
   private voiceCache: Map<string, TTSVoice[]> = new Map();
-  private audioElement: HTMLAudioElement;
 
   constructor(settings: TTSSettings) {
     super();
     this.settings = settings;
-    this.audioElement = typeof document !== 'undefined' ? document.createElement('audio') : null as any;
   }
 
   override get name(): string {
-    return 'OpenAI Compatible';
+    return "OpenAI Compatible";
   }
 
   /**
@@ -76,8 +322,8 @@ export class OpenAICompatibleTTSProvider extends TTSProvider {
       return `${OPENROUTER_API_URL}/audio/speech`;
     }
     // Ensure endpoint ends with /audio/speech
-    const url = this.settings.endpoint.replace(/\/$/, '');
-    return url.endsWith('/audio/speech') ? url : `${url}/audio/speech`;
+    const url = this.settings.endpoint.replace(/\/$/, "");
+    return url.endsWith("/audio/speech") ? url : `${url}/audio/speech`;
   }
 
   /**
@@ -85,13 +331,13 @@ export class OpenAICompatibleTTSProvider extends TTSProvider {
    */
   private validateSettings(): void {
     if (!this.settings.apiKey) {
-      throw new Error('TTS: No API key configured');
+      throw new Error("TTS: No API key configured");
     }
     if (!this.settings.model) {
-      throw new Error('TTS: No model selected');
+      throw new Error("TTS: No model selected");
     }
     if (!this.settings.voice) {
-      throw new Error('TTS: No voice selected');
+      throw new Error("TTS: No voice selected");
     }
   }
 
@@ -100,8 +346,8 @@ export class OpenAICompatibleTTSProvider extends TTSProvider {
    */
   private getHeaders(): HeadersInit {
     return {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.settings.apiKey}`,
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${this.settings.apiKey}`,
     };
   }
 
@@ -118,28 +364,33 @@ export class OpenAICompatibleTTSProvider extends TTSProvider {
 
     // Default voices matching OpenAI's standard set
     const defaultVoices: TTSVoice[] = [
-      { name: 'Alloy', id: 'alloy', lang: 'en-US' },
-      { name: 'Echo', id: 'echo', lang: 'en-US' },
-      { name: 'Fable', id: 'fable', lang: 'en-US' },
-      { name: 'Onyx', id: 'onyx', lang: 'en-US' },
-      { name: 'Nova', id: 'nova', lang: 'en-US' },
-      { name: 'Shimmer', id: 'shimmer', lang: 'en-US' },
+      { name: "Alloy", id: "alloy", lang: "en-US" },
+      { name: "Echo", id: "echo", lang: "en-US" },
+      { name: "Fable", id: "fable", lang: "en-US" },
+      { name: "Onyx", id: "onyx", lang: "en-US" },
+      { name: "Nova", id: "nova", lang: "en-US" },
+      { name: "Shimmer", id: "shimmer", lang: "en-US" },
     ];
 
     // Try to fetch custom voices from provider (optional)
     try {
-      const response = await fetch(`${endpoint.replace('/audio/speech', '')}/models`, {
-        headers: this.getHeaders(),
-      });
+      const response = await fetch(
+        `${endpoint.replace("/audio/speech", "")}/models`,
+        {
+          headers: this.getHeaders(),
+        },
+      );
 
       if (response.ok) {
         const data = await response.json();
         if (data.data && Array.isArray(data.data)) {
-          const voices = data.data.filter((m: any) => m.id?.includes('tts')).map((m: any) => ({
-            name: m.id,
-            id: m.id,
-            lang: 'en-US',
-          }));
+          const voices = data.data
+            .filter((m: any) => m.id?.includes("tts"))
+            .map((m: any) => ({
+              name: m.id,
+              id: m.id,
+              lang: "en-US",
+            }));
           if (voices.length > 0) {
             this.voiceCache.set(endpoint, voices);
             return voices;
@@ -147,7 +398,7 @@ export class OpenAICompatibleTTSProvider extends TTSProvider {
         }
       }
     } catch (err) {
-      console.warn('[TTS] Failed to fetch custom voices, using defaults', err);
+      console.warn("[TTS] Failed to fetch custom voices, using defaults", err);
     }
 
     this.voiceCache.set(endpoint, defaultVoices);
@@ -161,18 +412,18 @@ export class OpenAICompatibleTTSProvider extends TTSProvider {
     this.validateSettings();
 
     if (!text || text.trim().length === 0) {
-      throw new Error('TTS: Cannot generate speech for empty text');
+      throw new Error("TTS: Cannot generate speech for empty text");
     }
 
     const response = await fetch(this.getEndpoint(), {
-      method: 'POST',
+      method: "POST",
       headers: this.getHeaders(),
       body: JSON.stringify({
         model: this.settings.model,
         input: text,
         voice: voice,
         speed: this.settings.speed,
-        response_format: 'mp3',
+        response_format: "mp3",
       }),
     });
 
@@ -183,55 +434,6 @@ export class OpenAICompatibleTTSProvider extends TTSProvider {
 
     return response.blob();
   }
-
-  /**
-   * Play audio blob with visual feedback
-   */
-  async playAudio(blob: Blob, onProgress?: (progress: number) => void): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(blob);
-
-      this.audioElement.src = url;
-      this.audioElement.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error('Failed to play audio'));
-      };
-
-      // Track progress
-      if (onProgress && this.audioElement.duration) {
-        const updateProgress = () => {
-          onProgress((this.audioElement.currentTime / this.audioElement.duration) * 100);
-        };
-        this.audioElement.addEventListener('timeupdate', updateProgress);
-      }
-
-      this.audioElement.onended = () => {
-        URL.revokeObjectURL(url);
-        resolve();
-      };
-
-      this.audioElement.play().catch(reject);
-    });
-  }
-
-  /**
-   * Stop current playback
-   */
-  stopAudio(): void {
-    this.audioElement.pause();
-    this.audioElement.currentTime = 0;
-  }
-
-  /**
-   * Get current playback state
-   */
-  getPlaybackState(): { playing: boolean; progress: number; duration: number } {
-    return {
-      playing: !this.audioElement.paused,
-      progress: this.audioElement.currentTime,
-      duration: this.audioElement.duration || 0,
-    };
-  }
 }
 
 /**
@@ -239,7 +441,7 @@ export class OpenAICompatibleTTSProvider extends TTSProvider {
  * Manages TTS operations and provider lifecycle
  */
 export class AITTSService {
-  private provider: OpenAICompatibleTTSProvider | null = null;
+  private provider: TTSProvider | null = null;
   private settings: TTSSettings | null = null;
   private isPlaying = false;
   private currentAudio: Blob | null = null;
@@ -256,11 +458,16 @@ export class AITTSService {
     }
 
     try {
-      this.provider = new OpenAICompatibleTTSProvider(settings);
+      if (settings.provider === "google") {
+        this.provider = new GoogleTranslateTTSProvider(settings);
+      } else {
+        this.provider = new OpenAICompatibleTTSProvider(settings);
+      }
+
       // Validate by fetching voices
       await this.provider.getAvailableVoices();
     } catch (error) {
-      console.error('[TTSService] Failed to initialize provider:', error);
+      console.error("[TTSService] Failed to initialize provider:", error);
       this.provider = null;
       throw error;
     }
@@ -271,7 +478,7 @@ export class AITTSService {
    */
   async updateSettings(settings: Partial<TTSSettings>): Promise<void> {
     if (!this.settings) {
-      throw new Error('TTS service not initialized');
+      throw new Error("TTS service not initialized");
     }
 
     this.settings = { ...this.settings, ...settings };
@@ -290,7 +497,7 @@ export class AITTSService {
    */
   async getAvailableVoices(): Promise<TTSVoice[]> {
     if (!this.provider) {
-      throw new Error('TTS provider not initialized');
+      throw new Error("TTS provider not initialized");
     }
     return this.provider.getAvailableVoices();
   }
@@ -301,19 +508,23 @@ export class AITTSService {
   async generateAndPlay(
     text: string,
     voice?: string,
-    onProgress?: (progress: number) => void
+    onProgress?: (progress: number) => void,
   ): Promise<void> {
     if (!this.provider || !this.settings) {
-      throw new Error('TTS service not ready');
+      throw new Error("TTS service not ready");
     }
 
     const voiceToUse = voice || this.settings.voice;
+    // For Google TTS, speed is applied client-side via playbackRate
+    // For OpenAI-compatible APIs, speed is handled server-side during generation
+    const playbackRate =
+      this.settings.provider === "google" ? this.settings.speed : 1.0;
 
     try {
       this.isPlaying = true;
       const blob = await this.provider.generateSpeech(text, voiceToUse);
       this.currentAudio = blob;
-      await this.provider.playAudio(blob, onProgress);
+      await this.provider.playAudio(blob, onProgress, playbackRate);
     } finally {
       this.isPlaying = false;
     }
@@ -324,7 +535,7 @@ export class AITTSService {
    */
   async generateSpeech(text: string, voice?: string): Promise<Blob> {
     if (!this.provider || !this.settings) {
-      throw new Error('TTS service not ready');
+      throw new Error("TTS service not ready");
     }
 
     const voiceToUse = voice || this.settings.voice;
@@ -350,7 +561,11 @@ export class AITTSService {
   /**
    * Get current playback progress
    */
-  getPlaybackProgress(): { playing: boolean; progress: number; duration: number } {
+  getPlaybackProgress(): {
+    playing: boolean;
+    progress: number;
+    duration: number;
+  } {
     if (!this.provider) {
       return { playing: false, progress: 0, duration: 0 };
     }
