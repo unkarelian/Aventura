@@ -114,11 +114,11 @@
         onchange={(e) => {
           settings.systemServicesSettings.tts.provider = e.currentTarget
             .value as "openai" | "google";
-          // Set default voice for Google if switching
+          // Set default voice for Google if current voice is not a valid Google language
           if (
             settings.systemServicesSettings.tts.provider === "google" &&
-            !["en", "it", "es"].includes(
-              settings.systemServicesSettings.tts.voice,
+            !GOOGLE_TRANSLATE_LANGUAGES.some(
+              (lang) => lang.id === settings.systemServicesSettings.tts.voice,
             )
           ) {
             settings.systemServicesSettings.tts.voice = "en";
