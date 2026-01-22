@@ -4,7 +4,6 @@
   import * as Card from "$lib/components/ui/card";
   import TagBadge from "$lib/components/tags/TagBadge.svelte";
   import type { Story } from "$lib/types";
-  import ResponsiveButton from "../shared/ResponsiveButton.svelte";
 
   interface Props {
     story: Story;
@@ -57,14 +56,13 @@
         <Card.Title class="text-lg font-semibold leading-tight truncate">
           {s.title}
         </Card.Title>
-        <ResponsiveButton
+        <Button
           icon={Trash2}
-          variant="link"
-          class="hover:text-destructive h-auto w-auto"
+          variant="ghost"
+          class="h-8 w-8 text-muted-foreground hover:text-foreground hover:bg-transparent"
           size="icon"
           onclick={(e) => onDelete(s.id, e)}
           title="Delete story"
-          label=""
         />
       </div>
       {#if s.genre}

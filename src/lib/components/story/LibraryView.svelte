@@ -6,8 +6,8 @@
   import { BookOpen, Upload, RefreshCw, Archive, Plus } from "lucide-svelte";
   import SetupWizard from "../wizard/SetupWizard.svelte";
 
-  import ResponsiveButton from "$lib/components/shared/ResponsiveButton.svelte";
-  import EmptyState from "$lib/components/shared/EmptyState.svelte";
+  import { Button } from "$lib/components/ui/button";
+  import EmptyState from "$lib/components/ui/empty-state/empty-state.svelte";
   import StoryCard from "$lib/components/story/StoryCard.svelte";
 
   // File input for import (HTML-based for mobile compatibility)
@@ -98,21 +98,24 @@
         </p>
       </div>
       <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-        <ResponsiveButton
+        <Button
           icon={RefreshCw}
           label="Sync"
+          variant="outline"
           title="Sync stories between devices"
           onclick={() => ui.openSyncModal()}
         />
-        <ResponsiveButton
+        <Button
           icon={Archive}
           label="Vault"
+          variant="outline"
           title="Vault"
           onclick={() => ui.setActivePanel("vault")}
         />
-        <ResponsiveButton
+        <Button
           icon={Upload}
           label="Import"
+          variant="outline"
           title="Import Story"
           onclick={triggerImport}
         />
@@ -123,7 +126,7 @@
           bind:this={importFileInput}
           onchange={handleImportFileSelect}
         />
-        <ResponsiveButton
+        <Button
           variant="default"
           icon={Plus}
           label="New Story"
