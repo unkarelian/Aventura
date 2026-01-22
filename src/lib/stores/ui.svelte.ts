@@ -524,7 +524,8 @@ class UIStore {
       actionType,
       wasRawActionChoice,
       // Capture activation data for lorebook stickiness preservation
-      activationData: { ...this.activationData },
+      // Use Object.fromEntries/entries to ensure a plain object copy from $state proxy
+      activationData: Object.fromEntries(Object.entries(this.activationData)),
       storyPosition: this.currentStoryPosition,
       // New fields for persistent retry
       entryCountBeforeAction: nextEntryPosition,
@@ -741,13 +742,23 @@ class UIStore {
   /**
    * Restore activation data from a backup.
    * Called during "retry last message" to preserve lorebook stickiness state.
+   * This completely replaces the current activation data with the backup state.
    */
   restoreActivationData(activationData: Record<string, number>, storyPosition: number) {
-    this.activationData = { ...activationData };
+    // Log what we're replacing (for debugging accumulation issues)
+    const currentCount = Object.keys(this.activationData).length;
+    const backupCount = Object.keys(activationData).length;
+
+    // Completely replace activation data with a fresh copy from backup
+    // This ensures any entries activated during the previous generation attempt are cleared
+    this.activationData = Object.fromEntries(Object.entries(activationData));
     this.currentStoryPosition = storyPosition;
+
     console.log('[UI] Activation data restored from backup', {
-      entriesCount: Object.keys(activationData).length,
+      previousEntriesCount: currentCount,
+      restoredEntriesCount: backupCount,
       storyPosition,
+      restoredEntryIds: Object.keys(this.activationData),
     });
   }
 
@@ -1265,9 +1276,20 @@ class UIStore {
    * The tracker maintains references to our state so activations are persisted.
    */
   getActivationTracker(storyPosition: number): ActivationTracker {
+    const previousPosition = this.currentStoryPosition;
     this.currentStoryPosition = storyPosition;
     const tracker = new SimpleActivationTracker(storyPosition);
-    tracker.loadActivationData(this.activationData);
+    // Create a fresh copy of activation data for the tracker
+    const activationDataCopy = Object.fromEntries(Object.entries(this.activationData));
+    tracker.loadActivationData(activationDataCopy);
+
+    console.log('[UI] getActivationTracker called', {
+      previousPosition,
+      newPosition: storyPosition,
+      activationDataEntryCount: Object.keys(activationDataCopy).length,
+      activationEntryIds: Object.keys(activationDataCopy),
+    });
+
     return tracker;
   }
 
