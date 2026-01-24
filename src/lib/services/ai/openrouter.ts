@@ -53,13 +53,10 @@ export class OpenAIProvider implements AIProvider {
       temperature: request.temperature ?? 0.8,
       max_tokens: request.maxTokens ?? 8192,
       stop: request.stopSequences,
+      top_p: request.topP,
+      response_format: request.responseFormat,
       ...request.extraBody, // Spread provider-specific options (e.g., reasoning)
     };
-
-    // Add top_p only if specified (some providers don't support it)
-    if (request.topP !== undefined) {
-      requestBody.top_p = request.topP;
-    }
 
     log('Sending request to OpenRouter...');
 
@@ -630,13 +627,10 @@ export class OpenAIProvider implements AIProvider {
       max_tokens: request.maxTokens ?? 8192,
       stop: request.stopSequences,
       stream: true,
+      top_p: request.topP,
+      response_format: request.responseFormat,
       ...request.extraBody, // Spread provider-specific options (e.g., reasoning)
     };
-
-    // Add top_p only if specified (some providers don't support it)
-    if (request.topP !== undefined) {
-      requestBody.top_p = request.topP;
-    }
 
     // Ensure base URL has trailing slash for proper URL construction
     const baseUrl = this.settings.openaiApiURL.endsWith('/')
@@ -752,23 +746,23 @@ export class OpenAIProvider implements AIProvider {
           try {
             const parsed = JSON.parse(data);
             const delta = parsed.choices[0]?.delta;
-            
+
             const content = delta?.content ?? '';
             const reasoning = delta?.reasoning_details?.reduce((acc: string, detail: { text: string; }) => acc + detail.text, '') || delta?.reasoning || '';
-            
+
             if (content || reasoning) {
               chunkCount++;
               if (content) fullContent += content;
               if (reasoning) fullReasoning += reasoning;
-              
+
               if (chunkCount <= 3) {
-                log('Stream chunk received', { 
-                  chunkCount, 
+                log('Stream chunk received', {
+                  chunkCount,
                   contentLength: content.length,
-                  reasoningLength: reasoning.length 
+                  reasoningLength: reasoning.length
                 });
               }
-              
+
               yield { content, reasoning: reasoning || undefined, done: false };
             }
           } catch (e) {
