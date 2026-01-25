@@ -61,24 +61,26 @@
   const hasItems = $derived(items.length > 0);
 </script>
 
-<div class="space-y-4">
+<div class="rounded-lg border border-muted-foreground/20 bg-muted/10 h-full flex flex-col min-h-0 overflow-hidden">
   <!-- Search -->
   {#if hasItems || isLoading}
-    <div class="relative">
-      <Input
+    <div class="relative shrink-0 border-b border-muted-foreground/10 bg-background/50">
+      <div class="absolute left-2.5 top-2.5 text-muted-foreground">
+        <Search class="h-4 w-4" />
+      </div>
+      <input
         type="text"
         bind:value={searchQuery}
         placeholder={searchPlaceholder}
-        class="pl-9 bg-background"
+        class="w-full bg-transparent py-2.5 pl-9 pr-4 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
         disabled={isLoading}
-        leftIcon={Search}
       />
     </div>
   {/if}
 
   <!-- List -->
-  <div class="rounded-md border bg-muted/10">
-    <ScrollArea class="h-72 w-full rounded-md p-2">
+  <ScrollArea class="flex-1 w-full">
+    <div class="p-2">
       {#if isLoading}
         <div class="space-y-3 p-2">
           {#each Array(3) as _}
@@ -92,7 +94,7 @@
           {/each}
         </div>
       {:else if filteredItems.length === 0}
-        <div class="flex h-full flex-col items-center justify-center py-8">
+        <div class="flex h-full flex-col items-center justify-center p-4 py-8">
           <EmptyState
             icon={emptyIcon}
             title={searchQuery ? "No matches found" : emptyTitle}
@@ -106,6 +108,7 @@
               ? onNavigateToVault
               : undefined}
             class="py-2"
+            size="sm"
           />
         </div>
       {:else}
@@ -115,6 +118,6 @@
           {/each}
         </div>
       {/if}
-    </ScrollArea>
-  </div>
+    </div>
+  </ScrollArea>
 </div>

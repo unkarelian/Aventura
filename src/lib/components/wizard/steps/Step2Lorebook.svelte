@@ -66,7 +66,7 @@
 </script>
 
 <!-- Header Section -->
-<div class="space-y-1 mb-3">
+<div class="space-y-1 mb-4">
   <div class="flex items-center gap-2">
     <div
       class="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10"
@@ -83,7 +83,7 @@
 
 <!-- Vault Browser -->
 <div class="space-y-1">
-  <div class="flex items-center justify-between">
+  <div class="flex items-center justify-between pb-1">
     <h4
       class="text-sm font-medium text-muted-foreground flex items-center gap-2"
     >
@@ -155,7 +155,7 @@
         >
           <Card.Root
             class={cn(
-              "transition-all overflow-hidden border-muted",
+              "transition-all overflow-hidden border-muted-foreground/20 bg-muted/10",
               lorebook.isLoading && "animate-pulse",
             )}
           >

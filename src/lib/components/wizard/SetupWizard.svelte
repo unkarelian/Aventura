@@ -10,13 +10,12 @@
   import {
     Step1Mode,
     Step2Lorebook,
-    Step3Genre,
-    Step4Setting,
-    Step5Characters,
-    Step6SupportingCast,
-    Step7Portraits,
-    Step8WritingStyle,
-    Step9Opening,
+    Step3Setting,
+    Step4Characters,
+    Step5SupportingCast,
+    Step6Portraits,
+    Step7WritingStyle,
+    Step8Opening,
   } from "./steps";
 
   interface Props {
@@ -41,8 +40,7 @@
   const stepTitles = [
     "Choose Your Mode",
     "Import Lorebook (Optional)",
-    "Select a Genre",
-    "Describe Your Setting",
+    "World & Setting",
     "Create Your Character",
     "Supporting Cast (Optional)",
     "Character Portraits (Optional)",
@@ -126,14 +124,7 @@
           }}
         />
       {:else if wizard.currentStep === 3}
-        <Step3Genre
-          selectedGenre={wizard.narrative.selectedGenre}
-          customGenre={wizard.narrative.customGenre}
-          onGenreChange={(g) => (wizard.narrative.selectedGenre = g)}
-          onCustomGenreChange={(v) => (wizard.narrative.customGenre = v)}
-        />
-      {:else if wizard.currentStep === 4}
-        <Step4Setting
+        <Step3Setting
           settingSeed={wizard.setting.settingSeed}
           expandedSetting={wizard.setting.expandedSettingDisplay}
           settingElaborationGuidance={wizard.setting.settingElaborationGuidance}
@@ -146,8 +137,10 @@
           isImportingCard={wizard.character.isImportingCard}
           savedScenarioToVaultConfirm={wizard.setting.savedScenarioToVaultConfirm}
           showScenarioVaultPicker={wizard.setting.showScenarioVaultPicker}
+          customGenre={wizard.narrative.customGenre}
           onSettingSeedChange={(v) => (wizard.setting.settingSeed = v)}
           onGuidanceChange={(v) => (wizard.setting.settingElaborationGuidance = v)}
+          onCustomGenreChange={(v) => (wizard.narrative.customGenre = v)}
           onUseAsIs={() => wizard.setting.useSettingAsIs()}
           onExpandSetting={() => wizard.setting.expandSetting(wizard.narrative.selectedGenre, wizard.narrative.customGenre, wizard.narrative.importedEntries)}
           onExpandFurther={() => wizard.setting.expandSettingFurther(wizard.narrative.selectedGenre, wizard.narrative.customGenre, wizard.narrative.importedEntries)}
@@ -168,8 +161,8 @@
              onClose();
           }}
         />
-      {:else if wizard.currentStep === 5}
-        <Step5Characters
+      {:else if wizard.currentStep === 4}
+        <Step4Characters
           selectedMode={wizard.narrative.selectedMode}
           expandedSetting={wizard.setting.expandedSettingDisplay}
           protagonist={wizard.character.protagonistDisplay}
@@ -201,8 +194,8 @@
              onClose();
           }}
         />
-      {:else if wizard.currentStep === 6}
-        <Step6SupportingCast
+      {:else if wizard.currentStep === 5}
+        <Step5SupportingCast
           protagonist={wizard.character.protagonistDisplay}
           supportingCharacters={wizard.character.supportingCharactersDisplay}
           showSupportingCharacterForm={wizard.character.showSupportingCharacterForm}
@@ -235,8 +228,8 @@
              onClose();
           }}
         />
-      {:else if wizard.currentStep === 7}
-        <Step7Portraits
+      {:else if wizard.currentStep === 6}
+        <Step6Portraits
           protagonist={wizard.character.protagonist}
           supportingCharacters={wizard.character.supportingCharacters}
           {imageGenerationEnabled}
@@ -263,8 +256,8 @@
           onRemoveSupportingPortrait={(name) => wizard.image.removeSupportingCharacterPortrait(name)}
           onSupportingPortraitUpload={(e, name) => wizard.image.handleSupportingCharacterPortraitUpload(e, name)}
         />
-      {:else if wizard.currentStep === 8}
-        <Step8WritingStyle
+      {:else if wizard.currentStep === 7}
+        <Step7WritingStyle
           selectedPOV={wizard.narrative.selectedPOV}
           selectedTense={wizard.narrative.selectedTense}
           tone={wizard.narrative.tone}
@@ -276,8 +269,8 @@
           onVisualProseModeChange={(v) => (wizard.narrative.visualProseMode = v)}
           onInlineImageModeChange={(v) => (wizard.narrative.inlineImageMode = v)}
         />
-      {:else if wizard.currentStep === 9}
-        <Step9Opening
+      {:else if wizard.currentStep === 8}
+        <Step8Opening
           storyTitle={wizard.narrative.storyTitle}
           openingGuidance={wizard.narrative.openingGuidance}
           generatedOpening={wizard.narrative.generatedOpeningDisplay}

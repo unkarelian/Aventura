@@ -29,7 +29,7 @@ export class WizardStore {
 
   // Wizard State
   currentStep = $state(1);
-  totalSteps = 9;
+  totalSteps = 8; // Reduced from 9
 
   onClose: () => void;
 
@@ -44,19 +44,26 @@ export class WizardStore {
         return true;
       case 2: // Lorebook (optional)
         return true;
-      case 3: // Genre
-        return this.narrative.selectedGenre !== "custom" || this.narrative.customGenre.trim().length > 0;
-      case 4: // Setting
+      case 3: // World & Setting (combined)
+        // require setting seed description
+        // genre is optional in UI (defaults to custom/empty string is allowed? No, usually we want some genre)
+        // But previously genre step required selection.
+        // Let's require setting seed. Genre tag is nice but maybe not blocking if empty?
+        // Let's require at least a seed.
+        // Also check if we want to enforce genre?
+        // Old logic: narrative.selectedGenre !== "custom" || narrative.customGenre.length > 0
+        // New logic: We just use customGenre string for everything in UI.
+        // But backend might need 'custom' enum.
         return this.setting.settingSeed.trim().length > 0;
-      case 5: // Character (required - must have protagonist)
+      case 4: // Character (required - must have protagonist)
         return this.character.protagonist !== null;
-      case 6: // Supporting Cast (optional)
+      case 5: // Supporting Cast (optional)
         return true;
-      case 7: // Portraits (optional)
+      case 6: // Portraits (optional)
         return true;
-      case 8: // Writing Style
+      case 7: // Writing Style
         return true;
-      case 9: // Opening
+      case 8: // Opening
         return this.narrative.storyTitle.trim().length > 0;
       default:
         return false;
@@ -88,24 +95,10 @@ export class WizardStore {
     this.setting.selectedScenarioId = scenarioId;
 
     // Narrative: Genre
-    const genreMap: Record<string, Genre> = {
-      Fantasy: "fantasy",
-      "Sci-Fi": "scifi",
-      Mystery: "mystery",
-      Horror: "horror",
-      "Slice of Life": "romance",
-      Historical: "custom",
-    };
-    const mappedGenre = genreMap[scenario.genre];
-    if (mappedGenre) {
-      this.narrative.selectedGenre = mappedGenre;
-      if (mappedGenre === "custom") {
-        this.narrative.customGenre = scenario.genre;
-      }
-    } else {
-      this.narrative.selectedGenre = "custom";
-      this.narrative.customGenre = scenario.genre;
-    }
+    // Always set to 'custom' so that the text field (customGenre) is treated as the source of truth
+    // for the genre label in scenarioService.
+    this.narrative.selectedGenre = "custom";
+    this.narrative.customGenre = scenario.genre;
 
     // Setting: Seed
     const locationDesc = scenario.initialState.startingLocation?.description;

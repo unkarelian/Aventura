@@ -31,11 +31,11 @@
 
 <button
   class={cn(
-    "group relative flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    "group relative flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
     selected
       ? "border-primary bg-primary/5 ring-1 ring-primary"
-      : "border-transparent bg-card shadow-sm hover:border-primary/20",
-    disabled && "opacity-50 cursor-not-allowed hover:bg-card hover:border-transparent",
+      : "border-muted bg-card shadow-sm hover:bg-accent hover:text-accent-foreground hover:border-primary/50",
+    disabled && "opacity-50 cursor-not-allowed hover:bg-card hover:border-muted",
     className
   )}
   {onclick}
