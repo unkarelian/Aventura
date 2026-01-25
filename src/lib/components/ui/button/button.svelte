@@ -79,7 +79,7 @@
 	// Determine if we are in "Responsive Mode" (Icon/Label provided)
 	let isResponsive = $derived(!!(Icon || label || mobileLabel || mobileVariant));
 
-	// If responsive mode and no class override, use the ResponsiveButton default
+	// If responsive mode and no class override, use ResponsiveButton default
 	// ResponsiveButton default: "h-10 w-10 sm:w-auto sm:h-10 sm:px-4"
 	let effectiveClass = $derived.by(() => {
 		if (isResponsive && !className) {

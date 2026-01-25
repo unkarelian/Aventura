@@ -6,13 +6,11 @@
   import {
     Plus,
     Edit2,
-    Trash2,
     ChevronRight,
     RefreshCw,
     Eye,
     EyeOff,
     Check,
-    X,
     Globe,
     Key as KeyIcon,
     Box,
@@ -34,9 +32,10 @@
   import { Separator } from "$lib/components/ui/separator";
   import * as Collapsible from "$lib/components/ui/collapsible";
   import { ScrollArea } from "$lib/components/ui/scroll-area";
-  import { Switch } from "$lib/components/ui/switch";
   import { Textarea } from "$lib/components/ui/textarea";
   import { Alert, AlertDescription } from "$lib/components/ui/alert";
+  import IconRow from "$lib/components/ui/icon-row.svelte";
+  import X from "@lucide/svelte/icons/x";
 
   interface Props {
     providerOptions: ProviderInfo[];
@@ -57,9 +56,13 @@
   let formNewModelInput = $state("");
   let formShowApiKey = $state(false);
 
+  // Auto-save debounce state
+  let saveTimeout: ReturnType<typeof setTimeout> | null = null;
+
   // UI state
   let isFetchingModels = $state(false);
   let fetchError = $state<string | null>(null);
+  let openCollapsibles = $state<Set<string>>(new Set());
 
   const urlPresets = [
     { name: "OpenRouter", url: "https://openrouter.ai/api/v1" },
@@ -74,9 +77,10 @@
     formApiKey = profile.apiKey;
     formCustomModels = [...profile.customModels];
     formFetchedModels = [...profile.fetchedModels];
-    formSetAsDefault = profile.id === settings.getDefaultProfileIdForProvider();
+    formSetAsDefault = false;
     formShowApiKey = false;
     fetchError = null;
+    openCollapsibles = new Set([...openCollapsibles, profile.id]);
   }
 
   function startNewProfile() {
@@ -87,7 +91,7 @@
     formApiKey = "";
     formCustomModels = [];
     formFetchedModels = [];
-    formSetAsDefault = false;
+    formSetAsDefault = settings.apiSettings.profiles.length === 0;
     formShowApiKey = false;
     fetchError = null;
   }
@@ -116,21 +120,18 @@
 
     if (isNewProfile) {
       await settings.addProfile(profile);
+
+      if (formSetAsDefault) {
+        settings.setDefaultProfile(profile.id);
+      }
     } else {
       await settings.updateProfile(profile.id, profile);
-    }
-
-    if (formSetAsDefault) {
-      settings.setDefaultProfile(profile.id);
-    } else if (settings.apiSettings.defaultProfileId === profile.id) {
-      settings.setDefaultProfile(undefined);
     }
 
     cancelEdit();
   }
 
   async function handleDelete(profileId: string) {
-    if (!confirm("Are you sure you want to delete this profile?")) return;
     await settings.deleteProfile(profileId);
     if (editingProfileId === profileId) cancelEdit();
   }
@@ -195,11 +196,68 @@
   function handleSetDefault(profileId: string) {
     const currentDefault = settings.getDefaultProfileIdForProvider();
     if (currentDefault === profileId) {
-      settings.setDefaultProfile(undefined);
+      if (settings.apiSettings.profiles.length > 1) {
+        settings.setDefaultProfile(undefined);
+      }
     } else {
       settings.setDefaultProfile(profileId);
     }
   }
+
+  function toggleCollapsible(profileId: string) {
+    if (openCollapsibles.has(profileId)) {
+      openCollapsibles = new Set(
+        Array.from(openCollapsibles).filter((id) => id !== profileId),
+      );
+    } else {
+      openCollapsibles = new Set([...openCollapsibles, profileId]);
+    }
+  }
+
+  function isProfileOpen(profileId: string): boolean {
+    return openCollapsibles.has(profileId);
+  }
+
+  async function autoSaveEdit() {
+    if (!editingProfileId || isNewProfile) return;
+    if (!formName.trim() || !formBaseUrl.trim()) return;
+
+    const existingProfile = settings.apiSettings.profiles.find(
+      (p) => p.id === editingProfileId,
+    );
+    if (!existingProfile) return;
+
+    const profile: APIProfile = {
+      id: editingProfileId,
+      name: formName.trim(),
+      baseUrl: formBaseUrl.trim().replace(/\/$/, ""),
+      apiKey: formApiKey,
+      customModels: formCustomModels,
+      fetchedModels: formFetchedModels,
+      createdAt: existingProfile.createdAt,
+    };
+
+    await settings.updateProfile(profile.id, profile);
+  }
+
+  function triggerAutoSave() {
+    if (saveTimeout) clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(() => {
+      autoSaveEdit();
+      saveTimeout = null;
+    }, 500);
+  }
+
+  $effect(() => {
+    if (editingProfileId && !isNewProfile) {
+      formName;
+      formBaseUrl;
+      formApiKey;
+      formCustomModels;
+      formFetchedModels;
+      triggerAutoSave();
+    }
+  });
 </script>
 
 <div class="space-y-6">
@@ -208,9 +266,7 @@
     <div class="flex items-center justify-between">
       <div>
         <h3 class="text-lg font-semibold">API Profiles</h3>
-        <p class="text-sm text-muted-foreground">
-          Manage your API endpoint configurations
-        </p>
+        <p class="text-sm text-muted-foreground">Setup your API endpoints</p>
       </div>
       <Button onclick={startNewProfile}>
         <Plus class="h-4 w-4" />
@@ -222,32 +278,19 @@
   <!-- New Profile Form -->
   {#if isNewProfile && editingProfileId}
     <Card class="border-primary/50 bg-primary/5">
-      <CardContent class="pt-4">
-        <div class="space-y-4">
+      <CardContent>
+        <div class="space-y-3">
           <div class="flex items-center gap-2">
             <Star class="h-4 w-4 text-primary" />
             <span class="text-sm font-medium text-primary">New Profile</span>
           </div>
 
-          <div class="grid gap-4 sm:grid-cols-2">
-            <div class="space-y-2">
-              <Label for="new-name">Profile Name</Label>
-              <Input
-                id="new-name"
-                placeholder="e.g., OpenRouter, Local LLM"
-                bind:value={formName}
-              />
-            </div>
-            <div class="space-y-2">
-              <Label>Default Profile</Label>
-              <div class="flex items-center space-x-2 pt-2">
-                <Switch bind:checked={formSetAsDefault} />
-                <Label class="text-sm cursor-pointer"
-                  >Set as system default</Label
-                >
-              </div>
-            </div>
-          </div>
+          <Input
+            id="new-name"
+            label="Profile Name"
+            placeholder="e.g., OpenRouter, Local LLM"
+            bind:value={formName}
+          />
 
           <div class="space-y-2">
             <Label for="new-url">Base URL</Label>
@@ -277,140 +320,125 @@
 
           <div class="space-y-2">
             <Label for="new-key">API Key</Label>
-            <div class="relative">
-              <Input
-                id="new-key"
-                type={formShowApiKey ? "text" : "password"}
-                placeholder="sk-..."
-                bind:value={formApiKey}
-                class="pr-16 font-mono text-xs"
-              />
-              <Button
-                variant="ghost"
-                size="sm"
-                class="absolute right-0 top-0 h-full px-3"
-                onclick={() => (formShowApiKey = !formShowApiKey)}
-              >
-                {#if formShowApiKey}
-                  <EyeOff class="h-4 w-4" />
-                {:else}
-                  <Eye class="h-4 w-4" />
-                {/if}
-              </Button>
-            </div>
+            <Input
+              id="new-key"
+              type="password"
+              placeholder="sk-..."
+              bind:value={formApiKey}
+              class="font-mono text-xs"
+            />
           </div>
+        </div>
 
-          <Separator />
+        <Separator />
 
-          <div class="space-y-3">
-            <div class="flex items-center justify-between">
-              <Label class="flex items-center gap-2">
-                <Box class="h-4 w-4" />
-                Models
-              </Label>
-              <Button
-                variant="outline"
-                size="sm"
-                onclick={handleFetchModels}
-                disabled={isFetchingModels || !formBaseUrl}
-              >
-                {#if isFetchingModels}
-                  <RefreshCw class=" h-3 w-3 animate-spin" />
-                  Fetching...
-                {:else}
-                  <RefreshCw class=" h-3 w-3" />
-                  Fetch Models
-                {/if}
-              </Button>
-            </div>
-
-            {#if fetchError}
-              <Alert variant="destructive">
-                <AlertCircle class="h-4 w-4" />
-                <AlertDescription class="text-xs">{fetchError}</AlertDescription
-                >
-              </Alert>
-            {/if}
-
-            {#if formFetchedModels.length > 0}
-              <div class="space-y-2">
-                <p class="text-xs font-medium text-muted-foreground">
-                  Fetched Models ({formFetchedModels.length})
-                </p>
-                <ScrollArea class="h-32 w-full rounded-md border">
-                  <div class="flex flex-wrap gap-1 p-2">
-                    {#each formFetchedModels as model}
-                      <Badge variant="secondary" class="gap-1 pr-1">
-                        <span class="max-w-[150px] truncate">{model}</span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          class="h-4 w-4 p-0 hover:text-destructive"
-                          onclick={() => handleRemoveFetchedModel(model)}
-                        >
-                          <X class="h-3 w-3" />
-                        </Button>
-                      </Badge>
-                    {/each}
-                  </div>
-                </ScrollArea>
-              </div>
-            {/if}
-
-            <div class="space-y-2">
-              <p class="text-xs font-medium text-muted-foreground">
-                Custom Models
-              </p>
-              <div class="flex gap-2">
-                <Input
-                  placeholder="model-name or provider/model"
-                  bind:value={formNewModelInput}
-                  class="flex-1"
-                  onkeydown={(e) => e.key === "Enter" && handleAddCustomModel()}
-                />
-                <Button
-                  size="icon"
-                  onclick={handleAddCustomModel}
-                  disabled={!formNewModelInput.trim()}
-                >
-                  <Plus class="h-4 w-4" />
-                </Button>
-              </div>
-              {#if formCustomModels.length > 0}
-                <ScrollArea class="h-24 w-full rounded-md border">
-                  <div class="flex flex-wrap gap-1 p-2">
-                    {#each formCustomModels as model}
-                      <Badge variant="outline" class="gap-1 pr-1">
-                        <span class="max-w-[150px] truncate">{model}</span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          class="h-4 w-4 p-0 hover:text-destructive"
-                          onclick={() => handleRemoveCustomModel(model)}
-                        >
-                          <X class="h-3 w-3" />
-                        </Button>
-                      </Badge>
-                    {/each}
-                  </div>
-                </ScrollArea>
-              {/if}
-            </div>
-          </div>
-
-          <div class="flex gap-2 pt-2">
-            <Button variant="outline" onclick={cancelEdit} class="flex-1"
-              >Cancel</Button
-            >
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <Label class="flex items-center gap-2">
+              <Box class="h-4 w-4" />
+              Models
+            </Label>
             <Button
-              onclick={handleSave}
-              disabled={!formName.trim() || !formBaseUrl.trim()}
-              class="flex-1"
+              variant="outline"
+              size="sm"
+              onclick={handleFetchModels}
+              disabled={isFetchingModels || !formBaseUrl}
             >
-              <Check class="h-4 w-4" />
-              Create Profile
+              {#if isFetchingModels}
+                <RefreshCw class=" h-3 w-3 animate-spin" />
+                Fetching...
+              {:else}
+                <RefreshCw class=" h-3 w-3" />
+                Fetch Models
+              {/if}
             </Button>
           </div>
+
+          {#if fetchError}
+            <Alert variant="destructive">
+              <AlertCircle class="h-4 w-4" />
+              <AlertDescription class="text-xs">{fetchError}</AlertDescription>
+            </Alert>
+          {/if}
+
+          {#if formFetchedModels.length > 0}
+            <div class="space-y-2">
+              <p class="text-xs font-medium text-muted-foreground">
+                Fetched Models ({formFetchedModels.length})
+              </p>
+              <ScrollArea class="h-32 w-full rounded-md border">
+                <div class="flex flex-wrap gap-1 p-2">
+                  {#each formFetchedModels as model}
+                    <Badge variant="secondary" class="gap-1 pr-1">
+                      <span class="max-w-37.5 truncate">{model}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        class="h-4 w-4 p-0 hover:text-destructive"
+                        onclick={() => handleRemoveFetchedModel(model)}
+                      >
+                        <X class="h-3 w-3" />
+                      </Button>
+                    </Badge>
+                  {/each}
+                </div>
+              </ScrollArea>
+            </div>
+          {/if}
+
+          <div class="space-y-2">
+            <p class="text-xs font-medium text-muted-foreground">
+              Custom Models
+            </p>
+            <div class="flex gap-2">
+              <Input
+                placeholder="model-name or provider/model"
+                bind:value={formNewModelInput}
+                class="flex-1 pr-20"
+                onkeydown={(e) => e.key === "Enter" && handleAddCustomModel()}
+              />
+              <Button
+                size="icon"
+                onclick={handleAddCustomModel}
+                disabled={!formNewModelInput.trim()}
+              >
+                <Plus class="h-4 w-4" />
+              </Button>
+            </div>
+            {#if formCustomModels.length > 0}
+              <ScrollArea class="h-24 w-full rounded-md border">
+                <div class="flex flex-wrap gap-1 p-2">
+                  {#each formCustomModels as model}
+                    <Badge variant="outline" class="gap-1 pr-1">
+                      <span class="max-w-37.5 truncate">{model}</span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        class="h-4 w-4 p-0 hover:text-destructive"
+                        onclick={() => handleRemoveCustomModel(model)}
+                      >
+                        <X class="h-3 w-3" />
+                      </Button>
+                    </Badge>
+                  {/each}
+                </div>
+              </ScrollArea>
+            {/if}
+          </div>
+        </div>
+
+        <div class="flex gap-2 pt-2">
+          <Button variant="outline" onclick={cancelEdit} class="flex-1"
+            >Cancel</Button
+          >
+          <Button
+            onclick={handleSave}
+            disabled={!formName.trim() || !formBaseUrl.trim()}
+            class="flex-1"
+          >
+            <Check class="h-4 w-4" />
+            Create Profile
+          </Button>
         </div>
       </CardContent>
     </Card>
@@ -422,7 +450,18 @@
       <div
         class="rounded-lg border bg-card text-card-foreground shadow-sm group"
       >
-        <Collapsible.Root>
+        <Collapsible.Root
+          open={isProfileOpen(profile.id)}
+          onOpenChange={(open) => {
+            if (open) {
+              openCollapsibles = new Set([...openCollapsibles, profile.id]);
+            } else {
+              openCollapsibles = new Set(
+                Array.from(openCollapsibles).filter((id) => id !== profile.id),
+              );
+            }
+          }}
+        >
           <div class="flex items-center p-3 pl-4 gap-3">
             <Collapsible.Trigger
               class="flex items-center gap-2 flex-1 text-left group/trigger"
@@ -436,28 +475,23 @@
               </div>
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
-                  <span class="font-medium text-sm truncate"
+                  <span class="font-medium text-xl md:text-sm"
                     >{profile.name}</span
                   >
                   {#if profile.id === settings.getDefaultProfileIdForProvider()}
-                    <Badge variant="default" class="shrink-0">
+                    <Badge
+                      variant="default"
+                      class="hidden shrink-0 md:flex items-center justify-center"
+                    >
                       <Star class="h-3 w-3 mr-1" />
                       Default
                     </Badge>
                   {/if}
                 </div>
-                <div class="flex items-center gap-2 mt-0.5">
+                <div class="items-center gap-2 mt-0.5 hidden md:flex">
                   <span class="text-xs text-muted-foreground font-mono truncate"
                     >{profile.baseUrl}</span
                   >
-                  {#if profile.apiKey}
-                    <Badge variant="secondary" class="text-xs">Key set</Badge>
-                  {:else}
-                    <Badge
-                      variant="outline"
-                      class="text-xs text-muted-foreground">No key</Badge
-                    >
-                  {/if}
                   <Badge
                     variant="outline"
                     class="text-xs text-muted-foreground"
@@ -469,62 +503,62 @@
               </div>
             </Collapsible.Trigger>
             <div class="flex items-center gap-1 shrink-0">
-              <Button
-                variant="ghost"
+              <IconRow
+                onDelete={() => handleDelete(profile.id)}
                 size="icon"
-                class="h-8 w-8"
-                onclick={() => handleSetDefault(profile.id)}
-                title={profile.id === settings.getDefaultProfileIdForProvider()
-                  ? "Remove default"
-                  : "Set as default"}
+                showDelete={settings.canDeleteProfile(profile.id)}
               >
-                <Star
-                  class={`h-4 w-4 ${profile.id === settings.getDefaultProfileIdForProvider() ? "fill-primary text-primary" : ""}`}
-                />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                class="h-8 w-8"
-                onclick={() => startEdit(profile)}
-                title="Edit profile"
-              >
-                <Edit2 class="h-4 w-4" />
-              </Button>
-              {#if settings.canDeleteProfile(profile.id)}
+                {#if profile.id === settings.getDefaultProfileIdForProvider()}
+                  <Badge variant="default" class="shrink-0 text-xs md:hidden">
+                    Default
+                  </Badge>
+                {/if}
+                {#if settings.apiSettings.profiles.length > 1}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    class="w-5 {profile.id ===
+                    settings.getDefaultProfileIdForProvider()
+                      ? 'md:block hidden'
+                      : ''}"
+                    onclick={() => handleSetDefault(profile.id)}
+                    title={profile.id ===
+                    settings.getDefaultProfileIdForProvider()
+                      ? "Remove default"
+                      : "Set as default"}
+                  >
+                    <Star
+                      class={`h-4 w-4 ${profile.id === settings.getDefaultProfileIdForProvider() ? "fill-primary text-primary" : ""}`}
+                    />
+                  </Button>
+                {/if}
                 <Button
                   variant="ghost"
                   size="icon"
-                  class="h-8 w-8 text-muted-foreground hover:text-destructive"
-                  onclick={() => handleDelete(profile.id)}
-                  title="Delete profile"
+                  class="w-5"
+                  onclick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    startEdit(profile);
+                  }}
+                  title="Edit profile"
                 >
-                  <Trash2 class="h-4 w-4" />
+                  <Edit2 class="h-4 w-4" />
                 </Button>
-              {/if}
+              </IconRow>
             </div>
           </div>
 
           <Collapsible.Content>
-            <div class="px-4 pb-4 pt-0 space-y-4 border-t bg-muted/10 mt-2 p-4">
-              <div class="grid gap-4 sm:grid-cols-2">
-                <div class="space-y-2">
-                  <Label>Profile Name</Label>
-                  <Input bind:value={formName} placeholder="Profile name" />
-                </div>
-                <div class="space-y-2">
-                  <Label>Default Profile</Label>
-                  <div class="flex items-center space-x-2 pt-2">
-                    <Switch bind:checked={formSetAsDefault} />
-                    <Label class="text-sm cursor-pointer"
-                      >Set as system default</Label
-                    >
-                  </div>
-                </div>
-              </div>
+            <div class="space-y-4 border-t bg-muted/10 mt-2 p-4">
+              <Input
+                label="Profile Name"
+                bind:value={formName}
+                placeholder="Profile name"
+              />
 
-              <div class="space-y-2">
-                <Label>Base URL</Label>
+              <div class="flex flex-col">
+                <Label class="mb-2">Base URL</Label>
                 <div class="flex flex-wrap gap-2 mb-2">
                   {#each urlPresets as preset}
                     <Badge
@@ -550,30 +584,16 @@
               </div>
 
               <div class="space-y-2">
-                <Label>API Key</Label>
-                <div class="relative">
-                  <Input
-                    type={formShowApiKey ? "text" : "password"}
-                    placeholder="sk-..."
-                    bind:value={formApiKey}
-                    class="pr-16 font-mono text-xs"
-                  />
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    class="absolute right-0 top-0 h-full px-3"
-                    onclick={() => (formShowApiKey = !formShowApiKey)}
-                  >
-                    {#if formShowApiKey}
-                      <EyeOff class="h-4 w-4" />
-                    {:else}
-                      <Eye class="h-4 w-4" />
-                    {/if}
-                  </Button>
-                </div>
+                <Input
+                  label="API Key"
+                  type="password"
+                  placeholder="sk-..."
+                  bind:value={formApiKey}
+                  class="font-mono text-xs"
+                />
               </div>
 
-              <div class="space-y-3 pt-2">
+              <div class="">
                 <div class="flex items-center justify-between">
                   <Label class="flex items-center gap-2">
                     <Box class="h-4 w-4" />
@@ -605,7 +625,7 @@
                 {/if}
 
                 {#if formFetchedModels.length > 0}
-                  <div class="space-y-2">
+                  <div class="space-y-1 mb-2">
                     <p class="text-xs font-medium text-muted-foreground">
                       Fetched Models ({formFetchedModels.length})
                     </p>
@@ -613,7 +633,7 @@
                       <div class="flex flex-wrap gap-1 p-2">
                         {#each formFetchedModels as model}
                           <Badge variant="secondary" class="gap-1 pr-1">
-                            <span class="max-w-[150px] truncate">{model}</span>
+                            <span class="max-w-37.5 truncate">{model}</span>
                             <Button
                               variant="ghost"
                               size="icon"
@@ -629,7 +649,7 @@
                   </div>
                 {/if}
 
-                <div class="space-y-2">
+                <div class="space-y-1">
                   <p class="text-xs font-medium text-muted-foreground">
                     Custom Models
                   </p>
@@ -637,7 +657,7 @@
                     <Input
                       placeholder="model-name or provider/model"
                       bind:value={formNewModelInput}
-                      class="flex-1"
+                      class="flex-1 pr-20"
                       onkeydown={(e) =>
                         e.key === "Enter" && handleAddCustomModel()}
                     />
@@ -670,20 +690,6 @@
                   {/if}
                 </div>
               </div>
-
-              <div class="flex gap-2 pt-2">
-                <Button variant="outline" onclick={cancelEdit} class="flex-1"
-                  >Cancel</Button
-                >
-                <Button
-                  onclick={handleSave}
-                  disabled={!formName.trim() || !formBaseUrl.trim()}
-                  class="flex-1"
-                >
-                  <Check class=" h-4 w-4" />
-                  Save Changes
-                </Button>
-              </div>
             </div>
           </Collapsible.Content>
         </Collapsible.Root>
@@ -712,27 +718,28 @@
   </div>
 
   <!-- Footer Links -->
-  <Card class="bg-muted/30">
+  <Card class="bg-muted/30 -mt-3">
     <CardContent class="p-4">
       <p class="text-sm text-muted-foreground">
-        Get an API key from{" "}
+        PAYG with
         <a
           href="https://openrouter.ai/keys"
           target="_blank"
           rel="noopener noreferrer"
           class="text-primary hover:underline"
         >
-          openrouter.ai
+          OpenRouter,
         </a>
-        {" or "}
+        $8/month sub with
         <a
           href="https://nano-gpt.com/subscription"
           target="_blank"
           rel="noopener noreferrer"
           class="text-primary hover:underline"
         >
-          nano-gpt.com
+          NanoGPT,
         </a>
+        or bring your own LLM!
       </p>
     </CardContent>
   </Card>

@@ -1,7 +1,8 @@
 <script lang="ts">
   import { Card, CardContent } from "$lib/components/ui/card";
   import { Button } from "$lib/components/ui/button";
-  import { Star, Pencil, Trash2, Loader2, X, Check } from "lucide-svelte";
+  import IconRow from "$lib/components/ui/icon-row.svelte";
+  import { Star, Pencil, Loader2 } from "lucide-svelte";
   import { cn } from "$lib/utils/cn";
   import type { Snippet } from "svelte";
 
@@ -45,31 +46,11 @@
     footer,
   }: Props = $props();
 
-  let confirmingDelete = $state(false);
-
   function handleCardClick() {
     if (isImporting) return;
     if (selectable && onSelect) {
       onSelect();
     }
-  }
-
-  function handleDelete(e: Event) {
-    e.stopPropagation();
-    if (onDelete) {
-      onDelete();
-    }
-    confirmingDelete = false;
-  }
-
-  function handleCancelDelete(e: Event) {
-    e.stopPropagation();
-    confirmingDelete = false;
-  }
-
-  function handleConfirmDelete(e: Event) {
-    e.stopPropagation();
-    confirmingDelete = true;
   }
 </script>
 
@@ -141,80 +122,43 @@
 
           <!-- Actions -->
           {#if !selectable && (onEdit || onDelete || onToggleFavorite)}
-            <div class="flex items-center gap-0.5 -mt-1 -mr-1 shrink-0">
-              {#if confirmingDelete}
-                <div class="flex items-center">
-                  <span class="text-xs font-medium text-muted-foreground"
-                    >Delete?</span
-                  >
-                  <Button
-                    icon={X}
-                    variant="ghost"
-                    size="icon"
-                    class="h-7 w-7 hover:bg-transparent text-muted-foreground hover:text-foreground"
-                    iconClass="h-3.5 w-3.5"
-                    onclick={handleCancelDelete}
-                    title="Cancel"
-                  />
-                  <Button
-                    icon={Check}
-                    variant="ghost"
-                    size="icon"
-                    class="h-7 w-7 hover:bg-transparent text-muted-foreground hover:text-foreground"
-                    iconClass="h-3.5 w-3.5"
-                    onclick={handleDelete}
-                    title="Confirm Delete"
-                  />
-                </div>
-              {:else}
-                {#if onToggleFavorite}
-                  <Button
-                    icon={Star}
-                    variant="ghost"
-                    size="icon"
-                    class="h-7 w-7 opacity-70 group-hover:opacity-100 transition-all hover:bg-transparent"
-                    iconClass={cn(
-                      "h-3.5 w-3.5 transition-colors",
-                      isFavorite
-                        ? "text-yellow-500 fill-yellow-500"
-                        : "text-muted-foreground hover:text-yellow-500",
-                    )}
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      onToggleFavorite?.();
-                    }}
-                    title={isFavorite
-                      ? "Remove from favorites"
-                      : "Add to favorites"}
-                  />
-                {/if}
-                {#if onEdit}
-                  <Button
-                    icon={Pencil}
-                    variant="ghost"
-                    size="icon"
-                    class="h-7 w-7 opacity-70 group-hover:opacity-100 transition-all hover:bg-transparent hover:text-foreground text-muted-foreground"
-                    iconClass="h-3.5 w-3.5"
-                    onclick={(e) => {
-                      e.stopPropagation();
-                      onEdit?.();
-                    }}
-                    title="Edit"
-                  />
-                {/if}
-                {#if onDelete}
-                  <Button
-                    icon={Trash2}
-                    variant="ghost"
-                    size="icon"
-                    class="h-7 w-7 opacity-70 group-hover:opacity-100 transition-all hover:bg-transparent hover:text-foreground text-muted-foreground"
-                    iconClass="h-3.5 w-3.5"
-                    onclick={handleConfirmDelete}
-                    title="Delete"
-                  />
-                {/if}
+            <IconRow class="-mt-2" size="icon" {onDelete}>
+              {#if onToggleFavorite}
+                <Button
+                  icon={Star}
+                  variant="ghost"
+                  size="icon"
+                  class="transition-all hover:bg-transparent hover:text-foreground text-muted-foreground w-5"
+                  iconClass={cn(
+                    "h-3.5 w-3.5 transition-colors",
+                    isFavorite
+                      ? "text-yellow-500 fill-yellow-500"
+                      : "text-muted-foreground hover:text-yellow-500",
+                  )}
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    onToggleFavorite?.();
+                  }}
+                  title={isFavorite
+                    ? "Remove from favorites"
+                    : "Add to favorites"}
+                />
               {/if}
-            </div>
+              {#if onEdit}
+                <Button
+                  icon={Pencil}
+                  variant="ghost"
+                  size="icon"
+                  class="transition-all hover:bg-transparent hover:text-foreground text-muted-foreground w-5"
+                  iconClass="h-3.5 w-3.5"
+                  onclick={(e) => {
+                    e.stopPropagation();
+                    onEdit?.();
+                  }}
+                  title="Edit"
+                />
+              {/if}
+            </IconRow>
           {/if}
         </div>
 

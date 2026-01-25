@@ -79,6 +79,62 @@
 
   let isResettingSettings = $state(false);
 
+  // Swipe handling
+  let touchStartX = $state(0);
+  let touchStartY = $state(0);
+  let touchEndX = $state(0);
+  let touchEndY = $state(0);
+  let isInteractiveTouch = $state(false);
+  let slideDirection = $state<"left" | "right" | "none">("none");
+  const SWIPE_THRESHOLD = 50;
+  const DIAGONAL_TOLERANCE = 0.5;
+
+  function handleTouchStart(e: TouchEvent) {
+    const touch = e.changedTouches[0];
+    const target = e.target as HTMLElement;
+    const interactiveSelector =
+      'input, textarea, select, [role="slider"], [role="switch"], button, a';
+
+    isInteractiveTouch = !!target.closest(interactiveSelector);
+    if (isInteractiveTouch) return;
+
+    touchStartX = touch.screenX;
+    touchStartY = touch.screenY;
+  }
+
+  function handleTouchEnd(e: TouchEvent) {
+    if (isInteractiveTouch) return;
+
+    const touch = e.changedTouches[0];
+    touchEndX = touch.screenX;
+    touchEndY = touch.screenY;
+    handleSwipe();
+    isInteractiveTouch = false;
+  }
+
+  function handleSwipe() {
+    const deltaX = touchEndX - touchStartX;
+    const deltaY = touchEndY - touchStartY;
+    const absDeltaX = Math.abs(deltaX);
+    const absDeltaY = Math.abs(deltaY);
+
+    if (absDeltaX < SWIPE_THRESHOLD) return;
+
+    const diagonalRatio = absDeltaY / absDeltaX;
+    if (diagonalRatio > DIAGONAL_TOLERANCE) return;
+
+    const currentIndex = tabs.findIndex((t) => t.id === activeTab);
+    if (deltaX > 0 && currentIndex > 0) {
+      slideDirection = "right";
+      activeTab = tabs[currentIndex - 1].id;
+      setTimeout(() => (slideDirection = "none"), 300);
+    } else if (deltaX < 0 && currentIndex < tabs.length - 1) {
+      slideDirection = "left";
+      activeTab = tabs[currentIndex + 1].id;
+      setTimeout(() => (slideDirection = "none"), 300);
+    }
+  }
+
   function openManualBodyEditor(
     title: string,
     value: string,
@@ -129,18 +185,18 @@
   <ResponsiveModal.Content
     class="max-w-6xl h-[90vh] flex flex-col overflow-hidden p-0"
   >
-    <ResponsiveModal.Header class="border-b border-border px-6 py-4">
+    <ResponsiveModal.Header class="px-6 pb-4">
       <div class="flex items-center gap-3">
         <div
-          class="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10"
+          class="hidden md:flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10"
         >
           <Settings2 class="h-5 w-5 text-primary" />
         </div>
-        <div>
-          <ResponsiveModal.Title class="text-xl font-semibold"
+        <div class="flex-1 text-center md:text-left">
+          <ResponsiveModal.Title class="text-2xl sm:text-xl font-semibold"
             >Settings</ResponsiveModal.Title
           >
-          <p class="text-sm text-muted-foreground">
+          <p class="hidden md:block text-sm text-muted-foreground">
             Configure your Aventuras experience
           </p>
         </div>
@@ -165,11 +221,11 @@
             </button>
           {/each}
 
-          <Separator class="my-4" />
+          <Separator class="my-3" />
 
           <Button
-            variant="ghost"
-            class="w-full justify-start gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+            variant="destructive"
+            class="w-full justify-start items-center"
             onclick={handleResetAll}
             disabled={isResettingSettings}
           >
@@ -184,107 +240,127 @@
         </div>
       </ScrollArea>
 
-      <ScrollArea class="flex-1">
-        <div class="max-w-3xl mx-auto p-6">
+      <ScrollArea
+        class="flex-1"
+        ontouchstart={handleTouchStart}
+        ontouchend={handleTouchEnd}
+        style="touch-action: pan-y pinch-zoom;"
+      >
+        <div class="mx-auto px-4 sm:p-6">
           <Tabs value={activeTab} onValueChange={(v) => (activeTab = v as any)}>
             {#each tabs as tab}
               <TabsContent value={tab.id} class="mt-0">
-                 {#if tab.id === "api"}
-                  <ApiConnectionTab {providerOptions} />
-                {:else if tab.id === "generation"}
-                  <GenerationTab
-                    {providerOptions}
-                    onOpenManualBodyEditor={openManualBodyEditor}
-                  />
-                {:else if tab.id === "interface"}
-                  <InterfaceTab />
-                {:else if tab.id === "prompts"}
-                  <PromptsTab
-                    openImportModal={() => (promptImportModalOpen = true)}
-                  />
-                {:else if tab.id === "images"}
-                  <ImagesTab />
-                {:else if tab.id === "tts"}
-                  <Card>
-                    <CardHeader>
-                      <CardTitle class="flex items-center gap-2">
-                        <Volume2 class="h-5 w-5" />
-                        Text to Speech
-                      </CardTitle>
-                      <CardDescription
-                        >Configure text-to-speech settings for narration</CardDescription
-                      >
-                    </CardHeader>
-                    <CardContent>
-                      <TTSSettings />
-                    </CardContent>
-                  </Card>
-                {:else if tab.id === "advanced"}
-                  <div class="space-y-6">
+                <div
+                  class={activeTab === tab.id && slideDirection === "left"
+                    ? "slide-in-right"
+                    : activeTab === tab.id && slideDirection === "right"
+                      ? "slide-in-left"
+                      : ""}
+                >
+                  {#if tab.id === "api"}
+                    <ApiConnectionTab {providerOptions} />
+                  {:else if tab.id === "generation"}
+                    <GenerationTab
+                      {providerOptions}
+                      onOpenManualBodyEditor={openManualBodyEditor}
+                    />
+                  {:else if tab.id === "interface"}
+                    <InterfaceTab />
+                  {:else if tab.id === "prompts"}
+                    <PromptsTab
+                      openImportModal={() => (promptImportModalOpen = true)}
+                    />
+                  {:else if tab.id === "images"}
+                    <ImagesTab />
+                  {:else if tab.id === "tts"}
                     <Card>
                       <CardHeader>
                         <CardTitle class="flex items-center gap-2">
-                          <SettingsIcon class="h-5 w-5" />
-                          Advanced Settings
+                          <Volume2 class="h-5 w-5" />
+                          Text to Speech
                         </CardTitle>
                         <CardDescription
-                          >Advanced configuration options</CardDescription
+                          >Configure text-to-speech settings for narration</CardDescription
                         >
                       </CardHeader>
                       <CardContent>
-                        <AdvancedSettings />
+                        <TTSSettings />
                       </CardContent>
                     </Card>
-
-                    <Alert variant="destructive">
-                      <RotateCcw class="h-4 w-4" />
-                      <AlertDescription>
-                        <div class="flex items-center justify-between">
-                          <div>
-                            <p class="font-medium">Reset All Settings</p>
-                            <p class="text-sm mt-1">
-                              Reset all settings to defaults. Your API key will
-                              be preserved.
-                            </p>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            class="border-destructive/50 text-destructive hover:bg-destructive/20"
-                            onclick={handleResetAll}
-                            disabled={isResettingSettings}
+                  {:else if tab.id === "advanced"}
+                    <div class="space-y-6">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle class="flex items-center gap-2">
+                            <SettingsIcon class="h-5 w-5" />
+                            Advanced Settings
+                          </CardTitle>
+                          <CardDescription
+                            >Advanced configuration options</CardDescription
                           >
-                            {#if isResettingSettings}
-                              <Loader2 class="mr-2 h-4 w-4 animate-spin" />
-                              Resetting...
-                            {:else}
-                              <RotateCcw class="mr-2 h-4 w-4" />
-                              Reset
-                            {/if}
-                          </Button>
-                        </div>
-                      </AlertDescription>
-                    </Alert>
-                  </div>
-                {/if}
-              </TabsContent>
+                        </CardHeader>
+                        <CardContent>
+                          <AdvancedSettings />
+                        </CardContent>
+                      </Card>
+
+                      <Alert variant="destructive">
+                        <RotateCcw class="h-4 w-4" />
+                        <AlertDescription>
+                          <div class="flex items-center justify-between">
+                            <div>
+                              <p class="font-medium">Reset All Settings</p>
+                              <p class="text-sm mt-1">
+                                Reset all settings to defaults. Your API key
+                                will be preserved.
+                              </p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              class="border-destructive/50 text-destructive hover:bg-destructive/20"
+                              onclick={handleResetAll}
+                              disabled={isResettingSettings}
+                            >
+                              {#if isResettingSettings}
+                                <Loader2 class="mr-2 h-4 w-4 animate-spin" />
+                                Resetting...
+                              {:else}
+                                <RotateCcw class="mr-2 h-4 w-4" />
+                                Reset
+                              {/if}
+                            </Button>
+                          </div>
+                        </AlertDescription>
+                      </Alert>
+                    </div>
+                  {/if}
+                </div></TabsContent
+              >
             {/each}
           </Tabs>
         </div>
       </ScrollArea>
     </div>
 
-    <div class="md:hidden border-t border-border bg-background p-2">
-      <div class="flex items-center gap-1 overflow-x-auto pb-1">
+    <div class="md:hidden border-t border-border bg-background p-1">
+      <div class="flex justify-center gap-0 overflow-x-auto pb-0.5">
         {#each tabs as tab}
           <Toggle
             pressed={activeTab === tab.id}
             onPressedChange={(pressed) => pressed && (activeTab = tab.id)}
             size="sm"
-            class="flex-shrink-0 gap-1.5 px-3"
+            class="shrink-0 px-2"
           >
             <tab.icon class="h-4 w-4" />
-            <span class="text-xs">{tab.label}</span>
+            <span
+              class="text-xs whitespace-nowrap overflow-hidden transition-all duration-300 ease-in-out {activeTab ===
+              tab.id
+                ? 'max-w-20 opacity-100'
+                : 'max-w-0 opacity-0'}"
+            >
+              {tab.label}
+            </span>
           </Toggle>
         {/each}
       </div>
@@ -322,3 +398,31 @@
   onClose={() => (promptImportModalOpen = false)}
 />
 
+<style>
+  .slide-in-right {
+    animation: slideInRight 0.3s ease-out;
+  }
+  .slide-in-left {
+    animation: slideInLeft 0.3s ease-out;
+  }
+  @keyframes slideInRight {
+    from {
+      opacity: 0;
+      transform: translateX(30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  @keyframes slideInLeft {
+    from {
+      opacity: 0;
+      transform: translateX(-30px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+</style>
