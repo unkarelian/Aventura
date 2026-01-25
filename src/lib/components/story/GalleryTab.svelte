@@ -4,7 +4,7 @@
   import { database } from '$lib/services/database';
   import { imageExportService } from '$lib/services/imageExport';
   import type { EmbeddedImage } from '$lib/types';
-  import { Download, ImageIcon, AlertCircle, X, Check, RefreshCw } from 'lucide-svelte';
+  import { Download, ImageIcon, AlertCircle, X, RefreshCw } from 'lucide-svelte';
 
   const SWIPE_THRESHOLD = 50;
 
@@ -38,20 +38,11 @@
   }
 
   async function loadImagesForStory(storyId: string) {
-    const cached = ui.getGalleryImages(storyId);
-    if (cached) {
-      images = cached;
-      resetSelection();
-      isLoading = false;
-      return;
-    }
-
     isLoading = true;
     try {
       const loaded = await database.getEmbeddedImagesForStory(storyId);
       ui.setGalleryImages(storyId, loaded);
       images = loaded;
-      resetSelection();
     } catch (error) {
       console.error('[Gallery] Failed to load images:', error);
       ui.showToast('Failed to load gallery images', 'error');
@@ -63,23 +54,20 @@
 
   $effect(() => {
     const storyId = story.currentStory?.id;
-    if (!storyId) {
+    resetSelection(); // Always reset selection on story change
+
+    if (storyId) {
+      const cached = ui.getGalleryImages(storyId);
+      if (cached) {
+        images = cached;
+        isLoading = false;
+      } else {
+        loadImagesForStory(storyId);
+      }
+    } else {
       images = [];
       isLoading = false;
-      return;
     }
-
-    const cached = ui.getGalleryImages(storyId);
-    if (cached) {
-      images = cached;
-      resetSelection();
-      isLoading = false;
-      return;
-    }
-
-    images = [];
-    resetSelection();
-    loadImagesForStory(storyId);
   });
 
   function toggleSelectAll() {
@@ -170,27 +158,18 @@
   }
 
   $effect(() => {
-    if (!lightboxOpen) return;
-
     function handleKeydown(e: KeyboardEvent) {
-      if (e.key === 'Escape') closeLightbox();
-      if (e.key === 'ArrowLeft') previousImage();
-      if (e.key === 'ArrowRight') nextImage();
+      if (lightboxOpen) {
+        if (e.key === 'Escape') closeLightbox();
+        if (e.key === 'ArrowLeft') previousImage();
+        if (e.key === 'ArrowRight') nextImage();
+      } else {
+        if (e.key === 'Escape') closeGallery();
+      }
     }
 
     window.addEventListener('keydown', handleKeydown);
     return () => window.removeEventListener('keydown', handleKeydown);
-  });
-
-  $effect(() => {
-    function handleGalleryKeydown(e: KeyboardEvent) {
-      if (e.key === 'Escape' && !lightboxOpen) {
-        closeGallery();
-      }
-    }
-
-    window.addEventListener('keydown', handleGalleryKeydown);
-    return () => window.removeEventListener('keydown', handleGalleryKeydown);
   });
 </script>
 

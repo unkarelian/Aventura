@@ -110,9 +110,9 @@
   ];
 </script>
 
-<div class="space-y-4">either write your own opening scene or generate one with AI
+<div class="space-y-4">
   <p class="text-surface-400">
-    Give your story a title and generate the opening scene.
+    Give your story a title and either write your own opening scene or generate one with AI.
   </p>
 
   <div>
