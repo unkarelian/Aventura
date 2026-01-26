@@ -6,9 +6,10 @@
   import { Button } from "$lib/components/ui/button";
   import * as Select from "$lib/components/ui/select";
   import { Slider } from "$lib/components/ui/slider";
-  import { RotateCcw, Loader2 } from "lucide-svelte";
+  import { RotateCcw } from "lucide-svelte";
   import { PollinationsImageProvider } from "$lib/services/ai/pollinationsImageProvider";
   import type { ImageModelInfo } from "$lib/services/ai/imageProvider";
+  import PollinationsModelSelect from "$lib/components/settings/PollinationsModelSelect.svelte";
 
   const imageProviders = [
     { value: "nanogpt", label: "NanoGPT" },
@@ -80,33 +81,6 @@
       loadPollinationsModels();
     }
   });
-
-  // --- Cost Formatting Logic ---
-  const AVG_PROMPT_TOKENS = 100;
-  const AVG_IMAGE_TOKENS = 1000;
-
-  function formatCost(model: ImageModelInfo, includeImageInputCost = false): string | null {
-    let cost =
-      (model.costPerImage || 0) +
-      (model.costPerTextToken || 0) * AVG_PROMPT_TOKENS;
-    if (includeImageInputCost) {
-      cost += (model.costPerImageToken || 0) * AVG_IMAGE_TOKENS;
-    }
-    if (cost <= 0) return null;
-    const imagesPerPollen = Math.round(1 / cost);
-    if (imagesPerPollen >= 1000) {
-      return `${(imagesPerPollen / 1000).toFixed(imagesPerPollen >= 10000 ? 0 : 1).replace(/\.0$/, "")}k`;
-    }
-    return String(imagesPerPollen);
-  }
-
-  function getModelLabel(model: ImageModelInfo, includeImageInputCost = false): string {
-    const cost = formatCost(model, includeImageInputCost);
-    const suffix = cost ? ` ~${cost}/day` : "";
-    const img2img = model.supportsImg2Img ? " (+img2img)" : "";
-    // Only show img2img flag if we aren't already in the "img2img only" list (context dependent, but safe to show)
-    return `${model.name}${img2img}${suffix}`;
-  }
 </script>
 
 <div class="space-y-4">
@@ -224,6 +198,7 @@
           settings.systemServicesSettings.imageGeneration.pollinationsApiKey =
             e.currentTarget.value;
           settings.saveSystemServicesSettings();
+          loadPollinationsModels();
         }}
         placeholder="sk_..."
       />
@@ -238,49 +213,20 @@
     <div>
       <Label class="mb-2 block">Image Model</Label>
       {#if settings.systemServicesSettings.imageGeneration.imageProvider === 'pollinations'}
-        <!-- Pollinations Model Select -->
-        <div class="relative">
-          <Select.Root
-            type="single"
-            value={settings.systemServicesSettings.imageGeneration.model}
-            onValueChange={(v) => {
-              settings.systemServicesSettings.imageGeneration.model = v;
-              settings.saveSystemServicesSettings();
-            }}
-            disabled={isLoadingPollinationsModels}
-          >
-            <Select.Trigger class="w-full">
-              {#if isLoadingPollinationsModels}
-                 <Loader2 class="mr-2 h-4 w-4 animate-spin" />
-                 Loading models...
-              {:else}
-                {filteredPollinationsModels.find(m => m.id === settings.systemServicesSettings.imageGeneration.model)?.name ?? settings.systemServicesSettings.imageGeneration.model}
-              {/if}
-            </Select.Trigger>
-            <Select.Content>
-              {#each filteredPollinationsModels as model}
-                <Select.Item value={model.id} label={getModelLabel(model)}>
-                   <div class="flex flex-col items-start gap-0.5">
-                    <span>{model.name}</span>
-                    <span class="text-xs text-muted-foreground">{getModelLabel(model).replace(model.name, '')}</span>
-                   </div>
-                </Select.Item>
-              {/each}
-            </Select.Content>
-          </Select.Root>
-          {#if pollinationsModelsError}
-             <p class="text-xs text-destructive mt-1">{pollinationsModelsError}</p>
-          {/if}
-           <Button variant="ghost" size="sm" class="h-6 text-[10px] absolute -top-7 right-0" onclick={loadPollinationsModels}>
-             Refresh
-           </Button>
-        </div>
-        {#if settings.systemServicesSettings.imageGeneration.model}
-             {@const selected = filteredPollinationsModels.find(m => m.id === settings.systemServicesSettings.imageGeneration.model)}
-             {#if selected?.description}
-                 <p class="mt-1 text-xs text-muted-foreground italic">{selected.description}</p>
-             {/if}
-        {/if}
+        <PollinationsModelSelect
+          models={filteredPollinationsModels}
+          selectedModelId={settings.systemServicesSettings.imageGeneration.model}
+          onModelChange={(v) => {
+            settings.systemServicesSettings.imageGeneration.model = v;
+            settings.saveSystemServicesSettings();
+          }}
+          showLoadingState={true}
+          isLoading={isLoadingPollinationsModels}
+          errorMessage={pollinationsModelsError}
+          showRefreshButton={true}
+          onRefresh={loadPollinationsModels}
+          showDescription={true}
+        />
       {:else}
         <Input
           type="text"
@@ -409,29 +355,15 @@
     <div>
       <Label class="mb-2 block">Portrait Generation Model</Label>
       {#if settings.systemServicesSettings.imageGeneration.imageProvider === 'pollinations'}
-         <!-- Re-use the same select logic or keep it simpler -->
-         <Select.Root
-            type="single"
-            value={settings.systemServicesSettings.imageGeneration.portraitModel}
-            onValueChange={(v) => {
-              settings.systemServicesSettings.imageGeneration.portraitModel = v;
-              settings.saveSystemServicesSettings();
-            }}
-            disabled={isLoadingPollinationsModels}
-          >
-            <Select.Trigger class="w-full">
-               {filteredPollinationsModels.find(m => m.id === settings.systemServicesSettings.imageGeneration.portraitModel)?.name ?? settings.systemServicesSettings.imageGeneration.portraitModel}
-            </Select.Trigger>
-            <Select.Content>
-              {#each filteredPollinationsModels as model}
-                <Select.Item value={model.id} label={getModelLabel(model)}>
-                   <div class="flex flex-col items-start gap-0.5">
-                    <span>{model.name}</span>
-                   </div>
-                </Select.Item>
-              {/each}
-            </Select.Content>
-          </Select.Root>
+        <PollinationsModelSelect
+          models={filteredPollinationsModels}
+          selectedModelId={settings.systemServicesSettings.imageGeneration.portraitModel}
+          onModelChange={(v) => {
+            settings.systemServicesSettings.imageGeneration.portraitModel = v;
+            settings.saveSystemServicesSettings();
+          }}
+          disabled={isLoadingPollinationsModels}
+        />
       {:else}
         <Input
           type="text"
@@ -454,29 +386,16 @@
     <div>
       <Label class="mb-2 block">Reference Image Model</Label>
       {#if settings.systemServicesSettings.imageGeneration.imageProvider === 'pollinations'}
-         <Select.Root
-            type="single"
-            value={settings.systemServicesSettings.imageGeneration.referenceModel}
-            onValueChange={(v) => {
-              settings.systemServicesSettings.imageGeneration.referenceModel = v;
-              settings.saveSystemServicesSettings();
-            }}
-            disabled={isLoadingPollinationsModels}
-          >
-            <Select.Trigger class="w-full">
-               {pollinationsImg2ImgModels.find(m => m.id === settings.systemServicesSettings.imageGeneration.referenceModel)?.name ?? settings.systemServicesSettings.imageGeneration.referenceModel}
-            </Select.Trigger>
-            <Select.Content>
-              {#each pollinationsImg2ImgModels as model}
-                <Select.Item value={model.id} label={getModelLabel(model, true)}>
-                   <div class="flex flex-col items-start gap-0.5">
-                    <span>{model.name}</span>
-                    <span class="text-xs text-muted-foreground">{getModelLabel(model, true).replace(model.name, '')}</span>
-                   </div>
-                </Select.Item>
-              {/each}
-            </Select.Content>
-          </Select.Root>
+        <PollinationsModelSelect
+          models={pollinationsImg2ImgModels}
+          selectedModelId={settings.systemServicesSettings.imageGeneration.referenceModel}
+          onModelChange={(v) => {
+            settings.systemServicesSettings.imageGeneration.referenceModel = v;
+            settings.saveSystemServicesSettings();
+          }}
+          includeImageInputCost={true}
+          disabled={isLoadingPollinationsModels}
+        />
       {:else}
         <Input
           type="text"

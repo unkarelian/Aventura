@@ -159,14 +159,11 @@ export class PollinationsImageProvider implements ImageProvider {
      * the API routing (treating it as a file extension).
      */
     private sanitizePrompt(prompt: string): string {
-        // First do standard encoding
-        let encoded = encodeURIComponent(prompt);
-
-        // Manually encode characters that encodeURIComponent misses but might cause issues in path
-        // . -> %2E (Crucial for trailing dots or dots interpreted as extensions)
-        encoded = encoded.replace(/\./g, '%2E');
-
-        return encoded;
+        // Standard encoding, then manually encode characters that are not encoded by encodeURIComponent
+        // but can cause issues in URL paths.
+        return encodeURIComponent(prompt).replace(/[!'()*.]/g, (c) => {
+            return '%' + c.charCodeAt(0).toString(16).toUpperCase();
+        });
     }
 
     /**
@@ -207,11 +204,12 @@ export class PollinationsImageProvider implements ImageProvider {
      */
     private arrayBufferToBase64(buffer: ArrayBuffer): string {
         const bytes = new Uint8Array(buffer);
-        let binary = '';
-        for (let i = 0; i < bytes.byteLength; i++) {
-            binary += String.fromCharCode(bytes[i]);
+        const CHUNK_SIZE = 0x8000; // 32k
+        const chunks: string[] = [];
+        for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+            chunks.push(String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + CHUNK_SIZE))));
         }
-        return btoa(binary);
+        return btoa(chunks.join(''));
     }
 
     async listModels(): Promise<ImageModelInfo[]> {
