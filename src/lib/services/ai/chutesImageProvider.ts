@@ -20,6 +20,7 @@ import type {
   ImageModelInfo,
 } from './imageProvider';
 import { ImageGenerationError } from './imageProvider';
+import { settings } from '$lib/stores/settings.svelte';
 
 // Default model for generation
 const DEFAULT_MODEL = 'z-image-turbo';
@@ -35,11 +36,9 @@ export class ChutesImageProvider implements ImageProvider {
   name = 'Chutes';
 
   private apiKey: string;
-  private debug: boolean;
 
-  constructor(apiKey: string, debug = false) {
+  constructor(apiKey: string) {
     this.apiKey = apiKey;
-    this.debug = debug;
   }
 
   /**
@@ -53,7 +52,7 @@ export class ChutesImageProvider implements ImageProvider {
     const model = request.model || DEFAULT_MODEL;
     const hasReferenceImages = request.imageDataUrls && request.imageDataUrls.length > 0;
 
-    if (this.debug) {
+    if (settings.uiSettings.debugMode) {
       console.log('[Chutes] Generating image with request:', {
         model,
         size: request.size,
@@ -88,7 +87,7 @@ try {
       const arrayBuffer = await response.arrayBuffer();
       const base64 = this.arrayBufferToBase64(arrayBuffer);
 
-      if (this.debug) {
+      if (settings.uiSettings.debugMode) {
         console.log('[Chutes] Generation response:', {
           model,
           dataSize: arrayBuffer.byteLength,
@@ -136,7 +135,7 @@ try {
       body = this.buildStandardModelBody(request, width, height);
     }
 
-    if (this.debug) {
+    if (settings.uiSettings.debugMode) {
       console.log('[Chutes] Request body:', {
         endpoint,
         bodyKeys: Object.keys(body),
@@ -259,8 +258,7 @@ try {
 /**
  * Create a Chutes image provider instance.
  * @param apiKey - The Chutes API key
- * @param debug - Enable debug logging
  */
-export function createChutesProvider(apiKey: string, debug = false): ImageProvider {
-  return new ChutesImageProvider(apiKey, debug);
+export function createChutesProvider(apiKey: string): ImageProvider {
+  return new ChutesImageProvider(apiKey);
 }

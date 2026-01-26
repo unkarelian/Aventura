@@ -88,16 +88,13 @@ const DEFAULT_SETTINGS: ImagePromptSettings = {
 export class ImagePromptService {
   private provider: OpenAIProvider;
   private settings: ImagePromptSettings;
-  private debug: boolean;
 
   constructor(
     provider: OpenAIProvider,
-    settings: Partial<ImagePromptSettings> = {},
-    debug = false
+    settings: Partial<ImagePromptSettings> = {}
   ) {
     this.provider = provider;
     this.settings = { ...DEFAULT_SETTINGS, ...settings };
-    this.debug = debug;
   }
 
   /**
@@ -106,7 +103,7 @@ export class ImagePromptService {
    * @returns Array of imageable scenes, sorted by priority (highest first)
    */
   async identifyScenes(context: ImagePromptContext): Promise<ImageableScene[]> {
-    if (this.debug) {
+    if (settings.uiSettings.debugMode) {
       console.log('[ImagePrompt] Analyzing narrative for imageable scenes', {
         portraitMode: context.portraitMode,
         charactersWithPortraits: context.charactersWithPortraits,
@@ -183,7 +180,7 @@ ${context.translatedNarrative}`;
 
       const scenes = this.parseResponse(response.content);
 
-      if (this.debug) {
+      if (settings.uiSettings.debugMode) {
         console.log(`[ImagePrompt] Found ${scenes.length} imageable scenes`);
       }
 
@@ -222,7 +219,7 @@ ${context.translatedNarrative}`;
   private parseResponse(content: string): ImageableScene[] {
     const parsed = tryParseJsonWithHealing<unknown[]>(content);
     if (!parsed || !Array.isArray(parsed)) {
-      if (this.debug) {
+      if (settings.uiSettings.debugMode) {
         console.log('[ImagePrompt] Failed to parse response as array');
       }
       return [];
@@ -293,8 +290,7 @@ ${context.translatedNarrative}`;
  */
 export function createImagePromptService(
   provider: OpenAIProvider,
-  settings?: Partial<ImagePromptSettings>,
-  debug?: boolean
+  settings?: Partial<ImagePromptSettings>
 ): ImagePromptService {
-  return new ImagePromptService(provider, settings, debug);
+  return new ImagePromptService(provider, settings);
 }

@@ -49,7 +49,7 @@
     pollinationsModelsError = null;
 
     try {
-      const provider = new PollinationsImageProvider(apiKey, false);
+      const provider = new PollinationsImageProvider(apiKey);
       pollinationsModels = await provider.listModels();
     } catch (error) {
       pollinationsModelsError = error instanceof Error ? error.message : 'Failed to load models';

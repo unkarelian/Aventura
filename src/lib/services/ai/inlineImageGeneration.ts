@@ -24,10 +24,8 @@ import { emitImageQueued, emitImageReady } from '$lib/services/events';
 import { normalizeImageDataUrl } from '$lib/utils/image';
 import { extractPicTags, type ParsedPicTag } from '$lib/utils/inlineImageParser';
 
-const DEBUG = false;
-
 function log(...args: any[]) {
-  if (DEBUG) {
+  if (settings.uiSettings.debugMode) {
     console.log('[InlineImageGen]', ...args);
   }
 }
@@ -84,12 +82,12 @@ export class InlineImageGenerationService {
     const apiKey = InlineImageGenerationService.getApiKey();
 
     if (provider === 'chutes') {
-      return new ChutesImageProvider(apiKey, DEBUG);
+      return new ChutesImageProvider(apiKey);
     }
     if (provider === 'pollinations') {
-      return new PollinationsImageProvider(apiKey, DEBUG);
+      return new PollinationsImageProvider(apiKey);
     }
-    return new NanoGPTImageProvider(apiKey, DEBUG);
+    return new NanoGPTImageProvider(apiKey);
   }
 
   /**

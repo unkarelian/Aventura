@@ -23,10 +23,8 @@ import { story } from '$lib/stores/story.svelte';
 import { emitImageQueued, emitImageReady, emitImageAnalysisStarted, emitImageAnalysisComplete } from '$lib/services/events';
 import { normalizeImageDataUrl } from '$lib/utils/image';
 
-const DEBUG = true;
-
 function log(...args: any[]) {
-  if (DEBUG) {
+  if (settings.uiSettings.debugMode) {
     console.log('[ImageGeneration]', ...args);
   }
 }
@@ -107,12 +105,12 @@ export class ImageGenerationService {
     const apiKey = ImageGenerationService.getApiKey();
 
     if (provider === 'chutes') {
-      return new ChutesImageProvider(apiKey, DEBUG);
+      return new ChutesImageProvider(apiKey);
     }
     if (provider === 'pollinations') {
-      return new PollinationsImageProvider(apiKey, DEBUG);
+      return new PollinationsImageProvider(apiKey);
     }
-    return new NanoGPTImageProvider(apiKey, DEBUG);
+    return new NanoGPTImageProvider(apiKey);
   }
 
   /**

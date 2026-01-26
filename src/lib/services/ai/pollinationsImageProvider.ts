@@ -17,7 +17,7 @@ import type {
     ImageModelInfo,
 } from './imageProvider';
 import { ImageGenerationError } from './imageProvider';
-import { dev } from '$app/environment';
+import { settings } from '$lib/stores/settings.svelte';
 
 const POLLINATIONS_BASE_URL = 'https://gen.pollinations.ai';
 const POLLINATIONS_IMAGE_ENDPOINT = `${POLLINATIONS_BASE_URL}/image`;
@@ -29,25 +29,23 @@ const DEFAULT_MODEL = 'zimage';
 // Cache for models list (avoid repeated API calls)
 let modelsCache: ImageModelInfo[] | null = null;
 let modelsCacheTime = 0;
-const MODELS_CACHE_TTL = 30 * 60 * 1000; // 5 minutes
+const MODELS_CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 
 export class PollinationsImageProvider implements ImageProvider {
     id = 'pollinations';
     name = 'Pollinations.ai';
 
     private apiKey: string;
-    private debug: boolean;
 
-    constructor(apiKey: string, debug = false) {
+    constructor(apiKey: string) {
         this.apiKey = apiKey;
-        this.debug = debug;
     }
 
     async generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
         const model = request.model || DEFAULT_MODEL;
         const hasReferenceImages = request.imageDataUrls && request.imageDataUrls.length > 0;
 
-        if (this.debug) {
+        if (settings.uiSettings.debugMode) {
             console.log('[Pollinations] Generating image with request:', {
                 model,
                 size: request.size,
@@ -61,7 +59,7 @@ export class PollinationsImageProvider implements ImageProvider {
             // Build URL with query parameters
             const url = this.buildImageUrl(request.prompt, model, request.size, request.imageDataUrls);
 
-            if (this.debug) {
+            if (settings.uiSettings.debugMode) {
                 console.log('[Pollinations] Request URL:', url.substring(0, 200) + '...');
             }
 
@@ -85,7 +83,7 @@ export class PollinationsImageProvider implements ImageProvider {
             const arrayBuffer = await response.arrayBuffer();
             const base64 = this.arrayBufferToBase64(arrayBuffer);
 
-            if (this.debug) {
+            if (settings.uiSettings.debugMode) {
                 console.log('[Pollinations] Generation response:', {
                     model,
                     dataSize: arrayBuffer.byteLength,
@@ -148,7 +146,7 @@ export class PollinationsImageProvider implements ImageProvider {
         // Note: API key is sent via Authorization header for security
 
         const urlString = url.toString();
-        if (urlString.length > 2000 && this.debug) {
+        if (urlString.length > 2000 && settings.uiSettings.debugMode) {
             console.warn(`[Pollinations] URL length (${urlString.length}) approaches browser limits. Consider shortening the prompt.`);
         }
 
@@ -335,8 +333,7 @@ export class PollinationsImageProvider implements ImageProvider {
 /**
  * Create a Pollinations image provider instance.
  * @param apiKey - The Pollinations.ai API key
- * @param debug - Enable debug logging
  */
-export function createPollinationsProvider(apiKey: string, debug = dev): ImageProvider {
-    return new PollinationsImageProvider(apiKey, debug);
+export function createPollinationsProvider(apiKey: string): ImageProvider {
+    return new PollinationsImageProvider(apiKey);
 }

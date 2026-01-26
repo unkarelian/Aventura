@@ -12,6 +12,7 @@ import type {
   ImageModelInfo,
 } from './imageProvider';
 import { ImageGenerationError } from './imageProvider';
+import { settings } from '$lib/stores/settings.svelte';
 
 const NANOGPT_BASE_URL = 'https://nano-gpt.com';
 const NANOGPT_API_V1 = `${NANOGPT_BASE_URL}/api/v1`;
@@ -26,15 +27,13 @@ export class NanoGPTImageProvider implements ImageProvider {
   name = 'NanoGPT';
 
   private apiKey: string;
-  private debug: boolean;
 
-  constructor(apiKey: string, debug = false) {
+  constructor(apiKey: string) {
     this.apiKey = apiKey;
-    this.debug = debug;
   }
 
   async generateImage(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
-    if (this.debug) {
+    if (settings.uiSettings.debugMode) {
       console.log('[NanoGPT] Generating image with request:', {
         model: request.model,
         size: request.size,
@@ -78,7 +77,7 @@ export class NanoGPTImageProvider implements ImageProvider {
 
       const data = await response.json();
 
-      if (this.debug) {
+      if (settings.uiSettings.debugMode) {
         console.log('[NanoGPT] Generation response:', {
           imageCount: data.data?.length ?? 0,
           cost: data.cost,
@@ -195,8 +194,7 @@ export class NanoGPTImageProvider implements ImageProvider {
 /**
  * Create a NanoGPT image provider instance.
  * @param apiKey - The NanoGPT API key
- * @param debug - Enable debug logging
  */
-export function createNanoGPTProvider(apiKey: string, debug = false): ImageProvider {
-  return new NanoGPTImageProvider(apiKey, debug);
+export function createNanoGPTProvider(apiKey: string): ImageProvider {
+  return new NanoGPTImageProvider(apiKey);
 }
