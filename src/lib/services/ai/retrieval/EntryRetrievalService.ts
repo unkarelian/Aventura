@@ -591,7 +591,7 @@ export class EntryRetrievalService {
         messages: [{ role: 'user', content: prompt }],
         model: this.preset.model,
         temperature: this.preset.temperature,
-        maxTokens: 8192,
+        maxTokens: this.preset.maxTokens,
         extraBody: this.extraBody,
         signal,
       });

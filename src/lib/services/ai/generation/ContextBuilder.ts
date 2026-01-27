@@ -335,8 +335,6 @@ export class ContextBuilder {
 
     // Get preset configuration from Agent Profiles system
     const preset = settings.getPresetConfig(settings.getServicePresetId('entryRetrieval'), 'Entry Retrieval');
-    const tier3Model = preset.model;
-    const tier3Temperature = preset.temperature;
 
     try {
       const response = await this.provider.generateResponse({
@@ -344,9 +342,9 @@ export class ContextBuilder {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },
         ],
-        model: tier3Model,
-        temperature: tier3Temperature,
-        maxTokens: 8192,
+        model: preset.model,
+        temperature: preset.temperature,
+        maxTokens: preset.maxTokens,
       });
 
       // Parse response as JSON array

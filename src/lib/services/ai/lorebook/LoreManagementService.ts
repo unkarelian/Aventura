@@ -440,7 +440,7 @@ export class LoreManagementService extends BaseAIService {
           messages,
           model: this.model,
           temperature: this.temperature,
-          maxTokens: 8192,
+          maxTokens: this.maxTokens,
           tools: LORE_MANAGEMENT_TOOLS,
           tool_choice: 'auto',
           extraBody: this.extraBody,

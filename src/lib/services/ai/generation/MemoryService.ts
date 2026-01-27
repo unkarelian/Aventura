@@ -147,7 +147,7 @@ export class MemoryService extends BaseAIService {
           { role: 'user', content: prompt },
         ],
         temperature: this.temperature,
-        maxTokens: 8192,
+        maxTokens: this.maxTokens,
         extraBody: this.extraBody,
       });
 
@@ -209,7 +209,7 @@ NOTE: Only use for reference. This is NOT what you will be summarizing.
           { role: 'user', content: prompt },
         ],
         temperature: this.temperature,
-        maxTokens: 8192,
+        maxTokens: this.maxTokens,
         extraBody: this.extraBody,
       });
 
@@ -308,7 +308,7 @@ NOTE: Only use for reference. This is NOT what you will be summarizing.
           { role: 'user', content: prompt },
         ],
         temperature: this.temperature,
-        maxTokens: 8192,
+        maxTokens: this.maxTokens,
         extraBody: this.extraBody,
       });
 

@@ -203,7 +203,7 @@ export class AgenticRetrievalService extends BaseAIService {
           messages,
           model: this.model,
           temperature: this.temperature,
-          maxTokens: 8192,
+          maxTokens: this.maxTokens,
           tools: RETRIEVAL_TOOLS,
           tool_choice: 'auto',
           extraBody: this.extraBody,

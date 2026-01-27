@@ -189,7 +189,7 @@ export class TimelineFillService extends BaseAIService {
           { role: 'user', content: prompt },
         ],
         temperature: this.temperature,
-        maxTokens: 8192,
+        maxTokens: this.maxTokens,
         extraBody: this.extraBody,
         signal,
       });
@@ -382,8 +382,8 @@ export class TimelineFillService extends BaseAIService {
           { role: 'system', content: promptService.renderPrompt('timeline-fill-answer', promptContext) },
           { role: 'user', content: prompt },
         ],
-        temperature: 0.2,
-        maxTokens: 8192,
+        temperature: 0.2, // Lower temperature for deterministic factual answers
+        maxTokens: this.maxTokens,
         extraBody: this.extraBody,
         signal,
       });
