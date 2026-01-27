@@ -786,25 +786,23 @@
   <Card class="bg-muted/30 -mt-3">
     <CardContent class="p-4">
       <p class="text-sm text-muted-foreground">
-        PAYG with
+        Use
         <a
           href="https://openrouter.ai/keys"
           target="_blank"
           rel="noopener noreferrer"
           class="text-primary hover:underline"
         >
-          OpenRouter,
-        </a>
-        $8/month sub with
+          OpenRouter
+        </a>,
         <a
           href="https://nano-gpt.com/subscription"
           target="_blank"
           rel="noopener noreferrer"
           class="text-primary hover:underline"
         >
-          NanoGPT,
-        </a>
-        or bring your own LLM!
+          NanoGPT
+        </a>, or bring your own LLM!
       </p>
     </CardContent>
   </Card>
