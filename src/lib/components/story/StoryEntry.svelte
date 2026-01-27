@@ -39,6 +39,7 @@
   import { NanoGPTImageProvider } from "$lib/services/ai/image/providers/NanoGPTProvider";
   import { ChutesImageProvider } from "$lib/services/ai/image/providers/ChutesProvider";
   import { ImageGenerationService } from "$lib/services/ai/image/ImageGenerationService";
+  import { inlineImageService } from "$lib/services/ai/image/InlineImageService";
   import { promptService } from "$lib/services/prompts";
   import { onMount } from "svelte";
   import ReasoningBlock from "./ReasoningBlock.svelte";
@@ -479,8 +480,25 @@
     return sanitizeVisualProse(processedContent, entryId);
   }
 
+  // Handle creating missing inline images (stuck/lost records)
+  async function handleCreateMissingImage() {
+    if (!story.currentStory) return;
+
+    // Trigger scanning of this entry
+    // We pass the full content, the service will find tags and create missing records
+    const context = {
+      storyId: story.currentStory.id,
+      entryId: entry.id,
+      narrativeContent: entry.translatedContent ?? entry.content,
+      presentCharacters: story.characters, // Use all story characters for lookup
+    };
+
+    await inlineImageService.processNarrativeForInlineImages(context);
+    await loadEmbeddedImages();
+  }
+
   // Handle click on embedded image link
-  function handleContentClick(event: MouseEvent) {
+  function handleContentClick(event: MouseEvent | KeyboardEvent) {
     const target = event.target as HTMLElement;
 
     // Check for inline image action buttons
@@ -490,6 +508,12 @@
       event.stopPropagation();
       const action = actionBtn.getAttribute("data-action");
       const imageId = actionBtn.getAttribute("data-image-id");
+      const prompt = actionBtn.getAttribute("data-prompt");
+
+      if (action === "create-missing" && prompt) {
+        handleCreateMissingImage();
+        return;
+      }
 
       if (action && imageId) {
         handleInlineImageAction(action, imageId);
