@@ -580,8 +580,9 @@ export class EntryRetrievalService {
       protagonistName: 'the protagonist',
     };
 
-    // Use centralized prompt system
-    const prompt = promptService.renderUserPrompt('tier3-entry-selection', promptContext, {
+    // Use centralized prompt system - include both system and user prompts
+    const systemPrompt = promptService.renderPrompt('tier3-entry-selection', promptContext);
+    const userPrompt = promptService.renderUserPrompt('tier3-entry-selection', promptContext, {
       recentContent: recentContent || '(Story just started)',
       userInput,
       entrySummaries: entryList,
@@ -589,7 +590,10 @@ export class EntryRetrievalService {
 
     try {
       const response = await this.provider.generateResponse({
-        messages: [{ role: 'user', content: prompt }],
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
         model: this.preset.model,
         temperature: this.preset.temperature,
         maxTokens: this.preset.maxTokens,
