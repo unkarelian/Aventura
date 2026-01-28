@@ -219,7 +219,7 @@
   <!-- Type -->
   <div class="space-y-2">
     <Label for="entry-type">Type</Label>
-    <Select value={type} onValueChange={(v) => type = v as EntryType}>
+    <Select type="single" value={type} onValueChange={(v) => type = v as EntryType}>
       <SelectTrigger id="entry-type">
         {entryTypes.find(t => t.value === type)?.label ?? 'Select type'}
       </SelectTrigger>
