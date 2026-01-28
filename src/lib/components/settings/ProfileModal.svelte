@@ -1,13 +1,9 @@
 <script lang="ts">
   import { settings } from '$lib/stores/settings.svelte';
-  import type { APIProfile } from '$lib/types';
-  import { X, Plus, Trash2, RefreshCw, Check, AlertCircle, Globe, Key as KeyIcon, Box } from 'lucide-svelte';
+  import type { APIProfile, JSONSupportLevel } from '$lib/types';
+  import { X, Plus, Trash2, RefreshCw, Check, AlertCircle, Globe, Key as KeyIcon, Box, Code2 } from 'lucide-svelte';
   import { ask } from '@tauri-apps/plugin-dialog';
   import { fetch } from '@tauri-apps/plugin-http';
-
-  // Check if the current profile can be deleted
-  let canDelete = $derived(editingProfile ? settings.canDeleteProfile(editingProfile.id) : false);
-  let isDefaultProfile = $derived(editingProfile?.id === settings.getDefaultProfileIdForProvider());
 
   interface Props {
     isOpen: boolean;
@@ -23,6 +19,10 @@
     onSave,
   }: Props = $props();
 
+  // Check if the current profile can be deleted
+  let canDelete = $derived(editingProfile ? settings.canDeleteProfile(editingProfile.id) : false);
+  let isDefaultProfile = $derived(editingProfile?.id === settings.getDefaultProfileIdForProvider());
+
   // Form state
   let name = $state('');
   let baseUrl = $state('');
@@ -31,13 +31,14 @@
   let fetchedModels = $state<string[]>([]);
   let newModelInput = $state('');
   let setAsDefault = $state(false);
+  let jsonSupport = $state<JSONSupportLevel>('none');
 
   // UI state
   let isFetchingModels = $state(false);
   let fetchError = $state<string | null>(null);
   let showApiKey = $state(false);
   let abortController: AbortController | null = null;
-  
+
   // URL presets
   const urlPresets = [
     { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1' },
@@ -54,6 +55,7 @@
         customModels = [...editingProfile.customModels];
         fetchedModels = [...editingProfile.fetchedModels];
         setAsDefault = editingProfile.id === settings.getDefaultProfileIdForProvider();
+        jsonSupport = editingProfile.jsonSupport ?? 'none';
       } else {
         // Reset form for new profile - start with empty fields
         name = '';
@@ -62,6 +64,7 @@
         customModels = [];
         fetchedModels = [];
         setAsDefault = false;
+        jsonSupport = 'json_schema';  // Default to json_schema for new profiles
       }
       newModelInput = '';
       fetchError = null;
@@ -153,10 +156,11 @@
       customModels,
       fetchedModels,
       createdAt: editingProfile?.createdAt || Date.now(),
+      jsonSupport,
     };
 
     onSave(profile);
-    
+
     if (setAsDefault) {
       settings.setDefaultProfile(profile.id);
     } else if (settings.apiSettings.defaultProfileId === profile.id) {
@@ -190,22 +194,22 @@
 {#if isOpen}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
-  <div 
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" 
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
     onclick={onClose}
     aria-modal="true"
     role="dialog"
   >
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
-    <div 
-      class="w-full max-w-lg bg-surface-900 border border-surface-700 rounded-xl shadow-2xl flex flex-col max-h-[90vh]" 
+    <div
+      class="w-full max-w-lg bg-surface-900 border border-surface-700 rounded-xl shadow-2xl flex flex-col max-h-[90vh]"
       onclick={(e) => e.stopPropagation()}
     >
       <!-- Header -->
       <div class="flex items-center justify-between border-b border-surface-700 px-5 py-4 bg-surface-800 rounded-t-xl shrink-0">
         <h2 class="text-lg font-semibold text-surface-100">{editingProfile ? 'Edit Profile' : 'New API Profile'}</h2>
-        <button 
+        <button
           class="p-1.5 hover:bg-surface-700 text-surface-400 hover:text-surface-100 rounded-lg transition-colors"
           onclick={onClose}
         >
@@ -226,10 +230,10 @@
             bind:value={name}
           />
           <label class="flex items-start gap-2 pt-1 cursor-pointer group">
-            <input 
-              type="checkbox" 
+            <input
+              type="checkbox"
               bind:checked={setAsDefault}
-              class="mt-1 h-4 w-4 rounded border-surface-600 bg-surface-800 text-accent-500 focus:ring-accent-500/20" 
+              class="mt-1 h-4 w-4 rounded border-surface-600 bg-surface-800 text-accent-500 focus:ring-accent-500/20"
             />
             <div class="text-xs">
               <span class="block text-surface-300 group-hover:text-surface-200 transition-colors">Set as System Default (Fallback)</span>
@@ -244,14 +248,14 @@
             <Globe size={14} />
             Base URL
           </label>
-          
+
           <div class="flex flex-wrap gap-2 mb-2">
             {#each urlPresets as preset}
               <button
                 type="button"
                 class="px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 border
-                  {baseUrl === preset.url 
-                    ? 'bg-accent-600 text-white border-accent-500 shadow-sm' 
+                  {baseUrl === preset.url
+                    ? 'bg-accent-600 text-white border-accent-500 shadow-sm'
                     : 'bg-surface-800 text-surface-400 border-surface-700 hover:bg-surface-700 hover:text-surface-200'}"
                 onclick={() => handleSelectPreset(preset)}
               >
@@ -290,6 +294,55 @@
             >
               {showApiKey ? 'Hide' : 'Show'}
             </button>
+          </div>
+        </div>
+
+        <!-- JSON Support Section -->
+        <div class="space-y-2 pt-2 border-t border-surface-800">
+          <label class="text-sm font-medium text-surface-300 flex items-center gap-2">
+            <Code2 size={14} />
+            JSON Support
+          </label>
+          <div class="grid grid-cols-3 gap-2">
+            <button
+              type="button"
+              class="px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 border
+                {jsonSupport === 'none'
+                  ? 'bg-surface-700 text-surface-100 border-surface-600 shadow-sm'
+                  : 'bg-surface-800 text-surface-400 border-surface-700 hover:bg-surface-700 hover:text-surface-200'}"
+              onclick={() => jsonSupport = 'none'}
+            >
+              None
+            </button>
+            <button
+              type="button"
+              class="px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 border
+                {jsonSupport === 'json_object'
+                  ? 'bg-surface-700 text-surface-100 border-surface-600 shadow-sm'
+                  : 'bg-surface-800 text-surface-400 border-surface-700 hover:bg-surface-700 hover:text-surface-200'}"
+              onclick={() => jsonSupport = 'json_object'}
+            >
+              JSON Object
+            </button>
+            <button
+              type="button"
+              class="px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200 border
+                {jsonSupport === 'json_schema'
+                  ? 'bg-accent-600/20 text-accent-400 border-accent-600/30 shadow-sm'
+                  : 'bg-surface-800 text-surface-400 border-surface-700 hover:bg-surface-700 hover:text-surface-200'}"
+              onclick={() => jsonSupport = 'json_schema'}
+            >
+              JSON Schema
+            </button>
+          </div>
+          <div class="text-xs text-surface-500 space-y-1">
+            {#if jsonSupport === 'none'}
+              <p>Use text-based JSON instructions in prompts. Compatible with all providers.</p>
+            {:else if jsonSupport === 'json_object'}
+              <p>Use basic JSON mode via <code class="bg-surface-800 px-1 rounded">response_format</code>. Better reliability, lower token cost.</p>
+            {:else}
+              <p>Use structured output with schema validation. Best reliability, lowest token cost. Requires provider support.</p>
+            {/if}
           </div>
         </div>
 
@@ -359,7 +412,7 @@
                 <Plus size={16} />
               </button>
             </div>
-            
+
             {#if customModels.length > 0}
               <div class="flex flex-wrap gap-1.5">
                 {#each customModels as model, i (model + '-custom-' + i)}
@@ -383,9 +436,9 @@
       <!-- Footer -->
       <div class="border-t border-surface-700 p-5 bg-surface-800/50 rounded-b-xl shrink-0 flex flex-col sm:flex-row items-center justify-between gap-4">
         {#if editingProfile && canDelete}
-          <button 
-            type="button" 
-            class="px-4 py-2.5 rounded-lg border border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:border-red-500/30 transition-all duration-200 active:scale-[0.98] w-full sm:w-auto flex items-center justify-center gap-2 font-medium" 
+          <button
+            type="button"
+            class="px-4 py-2.5 rounded-lg border border-red-500/20 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:border-red-500/30 transition-all duration-200 active:scale-[0.98] w-full sm:w-auto flex items-center justify-center gap-2 font-medium"
             onclick={handleDelete}
           >
             <Trash2 size={16} />
@@ -396,11 +449,11 @@
         {:else}
           <div class="hidden sm:block"></div>
         {/if}
-        
+
         <div class="flex gap-3 w-full sm:w-auto">
-          <button 
-            type="button" 
-            class="px-4 py-2.5 rounded-lg border border-surface-600 bg-surface-800 text-surface-200 hover:bg-surface-700 hover:text-surface-100 font-medium transition-all duration-200 active:scale-[0.98] flex-1 sm:flex-none flex items-center justify-center shadow-sm" 
+          <button
+            type="button"
+            class="px-4 py-2.5 rounded-lg border border-surface-600 bg-surface-800 text-surface-200 hover:bg-surface-700 hover:text-surface-100 font-medium transition-all duration-200 active:scale-[0.98] flex-1 sm:flex-none flex items-center justify-center shadow-sm"
             onclick={onClose}
           >
             Cancel

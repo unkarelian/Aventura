@@ -2,6 +2,8 @@ import { BaseAIService, type OpenAIProvider } from '../core/BaseAIService';
 import type { StoryEntry, GenerationPreset } from '$lib/types';
 import { promptService, type PromptContext, type StoryMode, type POV, type Tense } from '$lib/services/prompts';
 import { tryParseJsonWithHealing } from '../utils/jsonHealing';
+import {getJsonSupportLevel} from '../jsonSupport';
+import {buildResponseFormat, maybeInjectJsonInstructions} from '../jsonInstructions';
 import { createLogger } from '../core/config';
 
 const log = createLogger('StyleReviewer');
@@ -70,6 +72,10 @@ export class StyleReviewerService extends BaseAIService {
       passages: combinedText,
     });
 
+    const jsonSupportLevel = getJsonSupportLevel(this.presetId);
+    const responseFormat = buildResponseFormat('style-reviewer', jsonSupportLevel);
+    const finalPrompt = maybeInjectJsonInstructions(prompt, 'style-reviewer', jsonSupportLevel);
+
     try {
       log('Sending style analysis request...');
 
@@ -77,11 +83,12 @@ export class StyleReviewerService extends BaseAIService {
         model: this.model,
         messages: [
           { role: 'system', content: promptService.renderPrompt('style-reviewer', promptContext) },
-          { role: 'user', content: prompt },
+          { role: 'user', content: finalPrompt },
         ],
         temperature: this.temperature,
         maxTokens: this.maxTokens,
         extraBody: this.extraBody,
+        responseFormat, // Use responseFormat for structured output
       });
 
       log('Style analysis response received', {

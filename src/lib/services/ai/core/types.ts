@@ -97,6 +97,30 @@ export interface ToolCall {
   };
 }
 
+// Response format types for structured JSON output
+export type ResponseFormatType = 'json_object' | 'json_schema';
+
+export interface JSONSchema {
+  type: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean' | 'null';
+  description?: string;
+  properties?: Record<string, JSONSchema>;
+  items?: JSONSchema;
+  required?: string[];
+  enum?: (string | number | boolean | null)[];
+  additionalProperties?: boolean | JSONSchema;
+  nullable?: boolean;
+}
+
+export interface ResponseFormat {
+  type: ResponseFormatType;
+  json_schema?: {
+    name: string;
+    description?: string;
+    strict?: boolean;
+    schema: JSONSchema;
+  };
+}
+
 export interface GenerationRequest {
   messages: Message[];
   model: string;
@@ -104,6 +128,7 @@ export interface GenerationRequest {
   topP?: number;
   maxTokens?: number;
   stopSequences?: string[];
+  responseFormat?: ResponseFormat;
   extraBody?: Record<string, unknown>; // For provider-specific options like reasoning
   signal?: AbortSignal;
 }

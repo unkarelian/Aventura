@@ -2,6 +2,8 @@ import { BaseAIService, type OpenAIProvider } from '../core/BaseAIService';
 import type { StoryEntry, StoryBeat, Entry, GenerationPreset } from '$lib/types';
 import { promptService, type PromptContext, type POV, type Tense } from '$lib/services/prompts';
 import { tryParseJsonWithHealing } from '../utils/jsonHealing';
+import {getJsonSupportLevel} from '../jsonSupport';
+import {buildResponseFormat, maybeInjectJsonInstructions} from '../jsonInstructions';
 import { createLogger, getContextConfig, getLorebookConfig } from '../core/config';
 
 const log = createLogger('Suggestions');
@@ -87,16 +89,21 @@ export class SuggestionsService extends BaseAIService {
       lorebookContext,
     });
 
+    const jsonSupportLevel = getJsonSupportLevel(this.presetId);
+    const responseFormat = buildResponseFormat('suggestions', jsonSupportLevel);
+    const finalPrompt = maybeInjectJsonInstructions(prompt, 'suggestions', jsonSupportLevel);
+
     try {
       const response = await this.provider.generateResponse({
         model: this.model,
         messages: [
           { role: 'system', content: promptService.renderPrompt('suggestions', context) },
-          { role: 'user', content: prompt },
+          { role: 'user', content: finalPrompt },
         ],
         temperature: this.temperature,
         maxTokens: this.maxTokens,
         extraBody: this.extraBody,
+        responseFormat, // Use responseFormat for structured output
       });
 
       const result = this.parseSuggestions(response.content);
