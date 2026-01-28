@@ -2,8 +2,8 @@ import { BaseAIService, type OpenAIProvider } from '../core/BaseAIService';
 import type { Character, Location, Item, StoryBeat, StoryEntry, TimeTracker, GenerationPreset } from '$lib/types';
 import { promptService, type PromptContext } from '$lib/services/prompts';
 import { tryParseJsonWithHealing } from '../utils/jsonHealing';
-import {getJsonSupportLevel} from './jsonSupport';
-import {buildResponseFormat, maybeInjectJsonInstructions} from './jsonInstructions';
+import {getJsonSupportLevel} from '../jsonSupport';
+import {buildResponseFormat, maybeInjectJsonInstructions} from '../jsonInstructions';
 import { createLogger } from '../core/config';
 
 const log = createLogger('Classifier');

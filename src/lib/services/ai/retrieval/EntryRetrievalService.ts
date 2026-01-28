@@ -14,8 +14,8 @@ import {settings} from '$lib/stores/settings.svelte';
 import { buildExtraBody } from '../core/requestOverrides';
 import { promptService, type PromptContext } from '$lib/services/prompts';
 import { tryParseJsonWithHealing } from '../utils/jsonHealing';
-import {getJsonSupportLevel} from './jsonSupport';
-import {buildResponseFormat, maybeInjectJsonInstructions} from './jsonInstructions';
+import {getJsonSupportLevel} from '../jsonSupport';
+import {buildResponseFormat, maybeInjectJsonInstructions} from '../jsonInstructions';
 
 /**
  * Live world state - the actively tracked entities that should always be Tier 1

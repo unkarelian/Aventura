@@ -3,8 +3,8 @@ import type { Chapter, StoryEntry, TimeTracker, Location, GenerationPreset } fro
 import { promptService, type PromptContext, type StoryMode, type POV, type Tense } from '$lib/services/prompts';
 import { tryParseJsonWithHealing } from '../utils/jsonHealing';
 import { createLogger } from '../core/config';
-import {getJsonSupportLevel} from './jsonSupport';
-import {buildResponseFormat, maybeInjectJsonInstructions} from './jsonInstructions';
+import {getJsonSupportLevel} from '../jsonSupport';
+import {buildResponseFormat, maybeInjectJsonInstructions} from '../jsonInstructions';
 
 // Format time tracker for timeline display (always shows full format)
 function formatTime(time: TimeTracker | null): string {

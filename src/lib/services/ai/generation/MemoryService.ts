@@ -2,8 +2,8 @@ import { BaseAIService, type OpenAIProvider } from '../core/BaseAIService';
 import type { Chapter, StoryEntry, MemoryConfig, TimeTracker, GenerationPreset } from '$lib/types';
 import { promptService, type PromptContext, type StoryMode, type POV, type Tense } from '$lib/services/prompts';
 import { tryParseJsonWithHealing } from '../utils/jsonHealing';
-import {getJsonSupportLevel} from './jsonSupport';
-import {buildResponseFormat, maybeInjectJsonInstructions} from './jsonInstructions';
+import {getJsonSupportLevel} from '../jsonSupport';
+import {buildResponseFormat, maybeInjectJsonInstructions} from '../jsonInstructions';
 
 // Format time tracker for display in context (always shows full format)
 function formatTime(time: TimeTracker | null): string {

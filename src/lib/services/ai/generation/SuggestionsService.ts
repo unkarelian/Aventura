@@ -2,8 +2,8 @@ import { BaseAIService, type OpenAIProvider } from '../core/BaseAIService';
 import type { StoryEntry, StoryBeat, Entry, GenerationPreset } from '$lib/types';
 import { promptService, type PromptContext, type POV, type Tense } from '$lib/services/prompts';
 import { tryParseJsonWithHealing } from '../utils/jsonHealing';
-import {getJsonSupportLevel} from './jsonSupport';
-import {buildResponseFormat, maybeInjectJsonInstructions} from './jsonInstructions';
+import {getJsonSupportLevel} from '../jsonSupport';
+import {buildResponseFormat, maybeInjectJsonInstructions} from '../jsonInstructions';
 import { createLogger, getContextConfig, getLorebookConfig } from '../core/config';
 
 const log = createLogger('Suggestions');
