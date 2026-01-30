@@ -116,8 +116,8 @@
 
     // Detect if we should scroll: 
     // 1. We are NOT user-scrolled-up (pinned mode)
-    // 2. OR we just added a new user entry (force scroll to bottom for the new message)
-    const shouldScroll = !ui.userScrolledUp || wasAdded;
+    // 2. OR on user action send message/retry
+    const shouldScroll = !ui.userScrolledUp || (wasAdded && ['user_action', 'retry'].includes(story.entries[story.entries.length - 1].type));
     
     if (!shouldScroll) return;
 
