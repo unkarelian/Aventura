@@ -11,6 +11,7 @@
   import EmptyState from '$lib/components/ui/empty-state/empty-state.svelte';
 
   let storyContainer: HTMLDivElement;
+  let containerHeight = $state(0);
 
   // Virtualization: Only render recent entries by default for performance
   // This dramatically improves performance with large stories (80k+ words)
@@ -109,6 +110,7 @@
     const _ = ui.streamingContent;
     const __ = ui.generationStatus;
     const ___ = ui.isGenerating;
+    const ____ = containerHeight;
 
     // Detect if entries were added (vs deleted or unchanged)
     const wasAdded = currentCount > prevEntryCount;
@@ -118,7 +120,6 @@
     // 1. We are NOT user-scrolled-up (pinned mode)
     // 2. OR on user action send message/retry
     const shouldScroll = !ui.userScrolledUp || (wasAdded && ['user_action', 'retry'].includes(story.entries[story.entries.length - 1].type));
-    
     if (!shouldScroll) return;
 
     scrollToBottom();
@@ -136,6 +137,7 @@
   <!-- Story entries container -->
   <div
     bind:this={storyContainer}
+    bind:clientHeight={containerHeight}
     class="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4"
     onscroll={handleScroll}
   >
