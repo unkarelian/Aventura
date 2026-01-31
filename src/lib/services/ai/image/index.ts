@@ -1,42 +1,39 @@
 /**
  * AI Image Module
  *
- * Image generation services and providers:
- * - ImageGeneration: Main image generation service
- * - ImagePrompt: AI-powered image prompt generation
- * - InlineImage: Inline image generation during narrative
- * - Providers: Various image generation API providers
+ * Image generation services using SDK-based providers.
+ * - InlineImageService: Inline image generation during narrative
+ * - modelListing: List available models from providers
+ * - imageUtils: Helper functions for image generation
  */
 
-export {
-  ImageGenerationService,
-  type ImageGenerationContext,
-} from './ImageGenerationService';
-
-export {
-  ImagePromptService,
-  createImagePromptService,
-  type ImagePromptSettings,
-  type ImageableScene,
-  type ImagePromptContext,
-} from './ImagePromptService';
-
+// Main inline image service
 export {
   InlineImageGenerationService,
   inlineImageService,
   type InlineImageContext,
 } from './InlineImageService';
 
-// Image providers
+// Model listing utilities
 export {
-  ImageGenerationError,
-  type ImageProvider,
-  type ImageGenerationRequest,
-  type ImageGenerationResponse,
-  type GeneratedImage,
+  listImageModels,
+  clearModelsCache,
   type ImageModelInfo,
-} from './providers/base';
+} from './modelListing';
 
-export { ChutesImageProvider, createChutesProvider } from './providers/ChutesProvider';
-export { NanoGPTImageProvider, createNanoGPTProvider } from './providers/NanoGPTProvider';
-export { OpenAICompatibleImageProvider, createOpenAICompatibleProvider } from './providers/OpenAIProvider';
+// Image generation utilities
+export {
+  isImageGenerationEnabled,
+  hasRequiredCredentials,
+  getProviderDisplayName,
+  retryImageGeneration,
+  generatePortrait,
+} from './imageUtils';
+
+// Constants
+export {
+  DEFAULT_FALLBACK_STYLE_PROMPT,
+  POLLINATIONS_DEFAULT_MODEL_ID,
+  POLLINATIONS_REFERENCE_MODEL_ID,
+  IMAGE_STUCK_THRESHOLD_MS,
+} from './constants';

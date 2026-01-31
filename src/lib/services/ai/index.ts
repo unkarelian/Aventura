@@ -35,8 +35,21 @@ import type { AgenticRetrievalResult } from './retrieval/AgenticRetrievalService
 import type { TimelineFillResult } from './retrieval/TimelineFillService';
 import { ContextBuilder, type ContextResult, type ContextConfig } from './generation/ContextBuilder';
 import { EntryRetrievalService, type EntryRetrievalResult, type ActivationTracker, getEntryRetrievalConfigFromSettings } from './retrieval/EntryRetrievalService';
-import { ImageGenerationService, type ImageGenerationContext } from './image/ImageGenerationService';
-import { inlineImageService, type InlineImageContext } from './image/InlineImageService';
+import { inlineImageService, type InlineImageContext, isImageGenerationEnabled } from './image';
+
+// Re-export ImageGenerationContext type for backwards compatibility
+export interface ImageGenerationContext {
+  storyId: string;
+  entryId: string;
+  narrativeResponse: string;
+  userAction: string;
+  presentCharacters: Character[];
+  currentLocation?: string;
+  chatHistory?: string;
+  lorebookContext?: string;
+  translatedNarrative?: string;
+  translationLanguage?: string;
+}
 import type { TranslationResult, UITranslationItem } from './utils/TranslationService';
 import type { StreamChunk } from './core/types';
 import type { Story, StoryEntry, Character, Location, Item, StoryBeat, Chapter, MemoryConfig, Entry, LoreManagementResult, TimeTracker } from '$lib/types';
@@ -573,7 +586,7 @@ class AIService {
    * Check if image generation is enabled and configured.
    */
   isImageGenerationEnabled(): boolean {
-    return ImageGenerationService.isEnabled();
+    return isImageGenerationEnabled();
   }
 
   /**

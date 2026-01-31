@@ -20,7 +20,7 @@
     Save,
   } from "lucide-svelte";
   import type { Character } from "$lib/types";
-  import { ImageGenerationService } from "$lib/services/ai/image/ImageGenerationService";
+  import { hasRequiredCredentials, getProviderDisplayName, generatePortrait as sdkGeneratePortrait } from "$lib/services/ai/image";
   import { promptService } from "$lib/services/prompts";
   import { normalizeImageDataUrl } from "$lib/utils/image";
   import { createLogger } from "$lib/services/ai/core/config";
@@ -315,7 +315,6 @@
 
     log("Starting portrait generation", {
       characterName: character.name,
-      provider: imageSettings.imageProvider,
       portraitMode: imageSettings.portraitMode,
       model: imageSettings.portraitMode
         ? imageSettings.portraitModel
@@ -323,9 +322,9 @@
       styleId: imageSettings.styleId,
     });
 
-    // Validate API key for selected provider
-    if (!ImageGenerationService.hasRequiredCredentials()) {
-      const providerName = ImageGenerationService.getProviderDisplayName();
+    // Validate credentials
+    if (!hasRequiredCredentials()) {
+      const providerName = getProviderDisplayName();
       log("Missing credentials for provider", { provider: providerName });
       portraitError = `${providerName} API key required for portrait generation`;
       return;
@@ -359,7 +358,6 @@
         };
         stylePrompt = promptService.getPrompt(styleId, promptContext) || "";
       } catch {
-        // Use default style
         stylePrompt = DEFAULT_FALLBACK_STYLE_PROMPT;
       }
 
@@ -381,58 +379,20 @@
         },
       );
 
-      // Determine which model to use based on portraitMode
-      const modelToUse = imageSettings.portraitMode
-        ? imageSettings.portraitModel
-        : imageSettings.model;
-
-      if (!modelToUse) {
-        log("No model configured for portrait generation");
-        portraitError =
-          "No image model configured. Please select a model in Settings > Images.";
-        return;
-      }
-
-      if (!imageSettings.imageProvider) {
-        log("No image provider configured");
-        portraitError =
-          "No image provider configured. Please select a provider in Settings > Images.";
-        return;
-      }
-
-      // Create the appropriate image provider based on settings
-      const provider = ImageGenerationService.createProviderInstance();
-
-      const requestParams = {
-        prompt: portraitPrompt,
-        model: modelToUse,
-        size: "1024x1024",
-        response_format: "b64_json" as const,
-      };
-
       log("Sending portrait generation request", {
-        provider: imageSettings.imageProvider,
-        model: requestParams.model,
         portraitMode: imageSettings.portraitMode,
-        size: requestParams.size,
-        promptLength: requestParams.prompt.length,
+        promptLength: portraitPrompt.length,
         descriptorCount: descriptors.length,
       });
 
-      // Generate the image
-      const response = await provider.generateImage(requestParams);
-
-      if (response.images.length === 0 || !response.images[0].b64_json) {
-        throw new Error("No image data returned");
-      }
+      // Generate the portrait using SDK
+      const base64 = await sdkGeneratePortrait(portraitPrompt);
 
       log("Portrait generated successfully", {
         characterName: character.name,
-        imageCount: response.images.length,
-        model: response.model,
       });
 
-      editPortrait = `data:image/png;base64,${response.images[0].b64_json}`;
+      editPortrait = `data:image/png;base64,${base64}`;
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : "Failed to generate portrait";

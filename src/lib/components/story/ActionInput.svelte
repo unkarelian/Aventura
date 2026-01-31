@@ -6,10 +6,8 @@
   import { aiService } from "$lib/services/ai";
   import { database } from "$lib/services/database";
   import { SimpleActivationTracker } from "$lib/services/ai/retrieval/EntryRetrievalService";
-  import {
-    ImageGenerationService,
-    type ImageGenerationContext,
-  } from "$lib/services/ai/image/ImageGenerationService";
+  import { type ImageGenerationContext } from "$lib/services/ai";
+  import { hasRequiredCredentials, getProviderDisplayName } from "$lib/services/ai/image";
   import type { TimelineFillResult } from "$lib/services/ai/retrieval/TimelineFillService";
   import { TranslationService } from "$lib/services/ai/utils/TranslationService";
   import {
@@ -65,18 +63,7 @@
 
   const manualImageGenDisabled = $derived.by(() => {
     if (ui.isGenerating || isManualImageGenRunning) return true;
-
-    const imgSettings = settings.systemServicesSettings.imageGeneration;
-    switch (imgSettings.imageProvider) {
-      case "nanogpt":
-        return !imgSettings.nanoGptApiKey;
-      case "chutes":
-        return !imgSettings.chutesApiKey;
-      case "pollinations":
-        return false; // Pollinations works without API key
-      default:
-        return true;
-    }
+    return !hasRequiredCredentials();
   });
 
   // In creative writing mode, show different input style
@@ -2283,8 +2270,8 @@
         onclick={handleManualImageGeneration}
         disabled={manualImageGenDisabled}
         title={manualImageGenDisabled &&
-        !ImageGenerationService.hasRequiredCredentials()
-          ? `Add a ${ImageGenerationService.getProviderDisplayName()} API key in Settings to generate images`
+        !hasRequiredCredentials()
+          ? `Add a ${getProviderDisplayName()} API key in Settings to generate images`
           : "Generate images for the last narration"}
         class="text-xs gap-1.5"
       >

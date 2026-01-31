@@ -76,6 +76,9 @@
     openai: "",
     anthropic: "",
     google: "",
+    nanogpt: "https://nano-gpt.com/api/v1",
+    chutes: "",
+    pollinations: "",
   };
 
   // Providers that have a built-in default API endpoint and can fetch models without a custom baseUrl
@@ -1158,4 +1161,5 @@
       </Card>
     {/if}
   </div>
+
 </div>

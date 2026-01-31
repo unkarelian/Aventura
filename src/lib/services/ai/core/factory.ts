@@ -18,7 +18,6 @@ import { LoreManagementService } from '../lorebook/LoreManagementService';
 import { AgenticRetrievalService } from '../retrieval/AgenticRetrievalService';
 import { TimelineFillService } from '../retrieval/TimelineFillService';
 import { EntryRetrievalService, getEntryRetrievalConfigFromSettings } from '../retrieval/EntryRetrievalService';
-import { ImageGenerationService } from '../image/ImageGenerationService';
 import { TranslationService } from '../utils/TranslationService';
 
 /**
@@ -140,14 +139,6 @@ export class ServiceFactory {
     const presetId = settings.getServicePresetId('chapterQuery');
     const timelineFillSettings = settings.systemServicesSettings.timelineFill;
     return new TimelineFillService(presetId, timelineFillSettings.maxQueries);
-  }
-
-  /**
-   * Create an image generation service instance.
-   */
-  createImageGenerationService(): ImageGenerationService {
-    const presetId = settings.getServicePresetId('imageGeneration');
-    return new ImageGenerationService(presetId);
   }
 
   /**

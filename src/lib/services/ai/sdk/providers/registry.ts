@@ -8,7 +8,10 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
+import { createChutes } from '@chutes-ai/ai-sdk-provider';
+import { createPollinations } from 'ai-sdk-pollinations';
 import { createTimeoutFetch } from './fetch';
+import { NANOGPT_API_URL } from './defaults';
 import type { APIProfile, ProviderType } from '$lib/types';
 
 /** Default HTTP timeout for API requests (3 minutes) */
@@ -23,6 +26,9 @@ const DEFAULT_BASE_URLS: Record<ProviderType, string | undefined> = {
   openai: undefined,  // undefined = SDK default (api.openai.com) - also works for NIM, local LLMs, etc.
   anthropic: undefined,  // undefined = SDK default (api.anthropic.com)
   google: undefined,  // Google uses SDK default
+  nanogpt: NANOGPT_API_URL,
+  chutes: undefined,  // SDK default
+  pollinations: undefined,  // SDK default
 };
 
 /**
@@ -81,6 +87,24 @@ export function createProviderFromProfile(profile: APIProfile) {
     case 'google':
       // Future: import { createGoogleGenerativeAI } from '@ai-sdk/google'
       throw new Error('Google provider not yet implemented');
+
+    case 'nanogpt':
+      // NanoGPT is OpenAI-compatible with custom base URL
+      return createOpenAI({
+        apiKey: profile.apiKey,
+        baseURL: baseURL ?? NANOGPT_API_URL,
+        fetch,
+      });
+
+    case 'chutes':
+      return createChutes({
+        apiKey: profile.apiKey,
+      });
+
+    case 'pollinations':
+      return createPollinations({
+        apiKey: profile.apiKey || undefined,  // Pollinations works without API key
+      });
 
     default: {
       // TypeScript exhaustive check

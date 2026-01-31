@@ -14,6 +14,72 @@ import type { ProviderType, ReasoningEffort } from '$lib/types';
 export const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1';
 
 /**
+ * NanoGPT API URL constant.
+ */
+export const NANOGPT_API_URL = 'https://nano-gpt.com/api/v1';
+
+/**
+ * Provider capabilities - what each provider supports.
+ */
+export interface ProviderCapabilities {
+  supportsTextGeneration: boolean;
+  supportsImageGeneration: boolean;
+}
+
+/**
+ * Provider capabilities lookup.
+ */
+export const PROVIDER_CAPABILITIES: Record<ProviderType, ProviderCapabilities> = {
+  openrouter:   { supportsTextGeneration: true,  supportsImageGeneration: false },
+  openai:       { supportsTextGeneration: true,  supportsImageGeneration: true },
+  anthropic:    { supportsTextGeneration: true,  supportsImageGeneration: false },
+  google:       { supportsTextGeneration: true,  supportsImageGeneration: true },
+  nanogpt:      { supportsTextGeneration: true,  supportsImageGeneration: true },
+  chutes:       { supportsTextGeneration: true,  supportsImageGeneration: true },
+  pollinations: { supportsTextGeneration: true,  supportsImageGeneration: true },
+};
+
+/**
+ * Image model defaults for providers that support image generation.
+ */
+export interface ImageModelDefaults {
+  defaultModel: string;
+  referenceModel: string;  // Model that supports image-to-image
+  supportedSizes: string[];
+}
+
+/**
+ * Image model defaults per provider.
+ */
+export const IMAGE_MODEL_DEFAULTS: Partial<Record<ProviderType, ImageModelDefaults>> = {
+  openai: {
+    defaultModel: 'dall-e-3',
+    referenceModel: 'dall-e-2',  // DALL-E 2 supports image editing
+    supportedSizes: ['1024x1024', '1024x1792', '1792x1024'],
+  },
+  google: {
+    defaultModel: 'imagen-3.0-generate-002',
+    referenceModel: 'imagen-3.0-generate-002',
+    supportedSizes: ['512x512', '1024x1024'],
+  },
+  nanogpt: {
+    defaultModel: 'z-image-turbo',
+    referenceModel: 'qwen-image',
+    supportedSizes: ['512x512', '1024x1024', '2048x2048'],
+  },
+  chutes: {
+    defaultModel: 'z-image-turbo',
+    referenceModel: 'qwen-image-edit-2511',
+    supportedSizes: ['576x576', '1024x1024', '2048x2048'],
+  },
+  pollinations: {
+    defaultModel: 'flux',
+    referenceModel: 'kontext',
+    supportedSizes: ['512x512', '1024x1024', '2048x2048'],
+  },
+};
+
+/**
  * Default model configuration for a service category.
  */
 export interface ServiceModelDefaults {
@@ -233,6 +299,147 @@ export const PROVIDER_DEFAULTS: Record<ProviderType, ProviderDefaults> = {
     },
     translation: {
       model: 'gemini-2.0-flash',
+      temperature: 0.3,
+      maxTokens: 4096,
+      reasoningEffort: 'off',
+    },
+  },
+
+  nanogpt: {
+    name: 'NanoGPT',
+    baseUrl: 'https://nano-gpt.com/api/v1',
+    narrative: {
+      model: 'deepseek-chat',
+      temperature: 0.8,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    classification: {
+      model: 'deepseek-chat',
+      temperature: 0.3,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    memory: {
+      model: 'deepseek-chat',
+      temperature: 0.3,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    suggestions: {
+      model: 'deepseek-chat',
+      temperature: 0.7,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    agentic: {
+      model: 'deepseek-chat',
+      temperature: 0.3,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    wizard: {
+      model: 'deepseek-chat',
+      temperature: 0.7,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    translation: {
+      model: 'deepseek-chat',
+      temperature: 0.3,
+      maxTokens: 4096,
+      reasoningEffort: 'off',
+    },
+  },
+
+  chutes: {
+    name: 'Chutes',
+    baseUrl: '', // SDK default
+    narrative: {
+      model: 'deepseek-ai/DeepSeek-V3-0324',
+      temperature: 0.8,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    classification: {
+      model: 'deepseek-ai/DeepSeek-V3-0324',
+      temperature: 0.3,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    memory: {
+      model: 'deepseek-ai/DeepSeek-V3-0324',
+      temperature: 0.3,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    suggestions: {
+      model: 'deepseek-ai/DeepSeek-V3-0324',
+      temperature: 0.7,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    agentic: {
+      model: 'deepseek-ai/DeepSeek-V3-0324',
+      temperature: 0.3,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    wizard: {
+      model: 'deepseek-ai/DeepSeek-V3-0324',
+      temperature: 0.7,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    translation: {
+      model: 'deepseek-ai/DeepSeek-V3-0324',
+      temperature: 0.3,
+      maxTokens: 4096,
+      reasoningEffort: 'off',
+    },
+  },
+
+  pollinations: {
+    name: 'Pollinations',
+    baseUrl: '', // SDK default
+    narrative: {
+      model: 'openai',
+      temperature: 0.8,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    classification: {
+      model: 'openai',
+      temperature: 0.3,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    memory: {
+      model: 'openai',
+      temperature: 0.3,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    suggestions: {
+      model: 'openai',
+      temperature: 0.7,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    agentic: {
+      model: 'openai',
+      temperature: 0.3,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    wizard: {
+      model: 'openai',
+      temperature: 0.7,
+      maxTokens: 8192,
+      reasoningEffort: 'off',
+    },
+    translation: {
+      model: 'openai',
       temperature: 0.3,
       maxTokens: 4096,
       reasoningEffort: 'off',

@@ -5,11 +5,15 @@
  * Uses explicit provider selection from APIProfile.providerType.
  */
 
-import { generateText, streamText, Output } from 'ai';
+import { generateText, streamText, Output, generateImage as sdkGenerateImage } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
+import { createChutes } from '@chutes-ai/ai-sdk-provider';
+import { createPollinations } from 'ai-sdk-pollinations';
 import type { ProviderOptions } from '@ai-sdk/provider-utils';
 import type { z } from 'zod';
 import { settings } from '$lib/stores/settings.svelte';
 import { createProviderFromProfile } from './providers';
+import { PROVIDER_CAPABILITIES, IMAGE_MODEL_DEFAULTS } from './providers/defaults';
 import type { ProviderType, GenerationPreset, ReasoningEffort, APIProfile } from '$lib/types';
 import { createLogger } from '../core/config';
 
@@ -51,6 +55,9 @@ const PROVIDER_OPTIONS_KEY: Record<ProviderType, string> = {
   openai: 'openai',
   anthropic: 'anthropic',
   google: 'google',
+  nanogpt: 'openai',    // NanoGPT is OpenAI-compatible
+  chutes: 'chutes',
+  pollinations: 'pollinations',
 };
 
 /**
@@ -360,4 +367,119 @@ export async function generateNarrative(options: NarrativeGenerateOptions): Prom
   });
 
   return text;
+}
+
+// ============================================================================
+// Image Generation
+// ============================================================================
+
+export interface GenerateImageOptions {
+  /** API profile ID to use for image generation */
+  profileId: string;
+  /** Image model ID */
+  model: string;
+  /** Generation prompt */
+  prompt: string;
+  /** Image size (e.g., '1024x1024') */
+  size?: string;
+  /** Reference images for img2img (base64 data URLs) */
+  referenceImages?: string[];
+  /** Optional abort signal */
+  signal?: AbortSignal;
+}
+
+export interface GenerateImageResult {
+  /** Generated image as base64 */
+  base64: string;
+  /** Provider's revised prompt if any */
+  revisedPrompt?: string;
+}
+
+/**
+ * Get image model from provider.
+ * Handles provider-specific method names:
+ * - OpenAI/NanoGPT: provider.image(modelId)
+ * - Chutes/Pollinations: provider.imageModel(modelId)
+ */
+function getImageModel(
+  provider: ReturnType<typeof createProviderFromProfile>,
+  providerType: ProviderType,
+  modelId: string
+) {
+  switch (providerType) {
+    case 'openai':
+    case 'nanogpt':
+      // OpenAI-compatible providers use .image()
+      return (provider as ReturnType<typeof createOpenAI>).image(modelId);
+    case 'chutes':
+      // Chutes uses .imageModel()
+      return (provider as ReturnType<typeof createChutes>).imageModel(modelId);
+    case 'pollinations':
+      // Pollinations uses .imageModel()
+      return (provider as ReturnType<typeof createPollinations>).imageModel(modelId);
+    default:
+      throw new Error(`Provider ${providerType} does not support image generation`);
+  }
+}
+
+/**
+ * Generate an image using the SDK.
+ *
+ * @param options - Image generation options
+ * @returns Generated image data
+ * @throws Error if profile not found or provider doesn't support image generation
+ */
+export async function generateImage(options: GenerateImageOptions): Promise<GenerateImageResult> {
+  const { profileId, model, prompt, size = '1024x1024', referenceImages, signal } = options;
+
+  // Get profile
+  const profile = settings.getProfile(profileId);
+  if (!profile) {
+    throw new Error(`Profile not found: ${profileId}`);
+  }
+
+  // Verify provider supports image generation
+  const capabilities = PROVIDER_CAPABILITIES[profile.providerType];
+  if (!capabilities?.supportsImageGeneration) {
+    throw new Error(`Provider ${profile.providerType} does not support image generation`);
+  }
+
+  log('generateImage', { profileId, model, providerType: profile.providerType, hasReferences: !!referenceImages?.length });
+
+  // Create provider and get image model
+  const provider = createProviderFromProfile(profile);
+  const imageModel = getImageModel(provider, profile.providerType, model);
+
+  // Build generation options
+  // If reference images are provided, use prompt object format for img2img
+  const generateOptions: Parameters<typeof sdkGenerateImage>[0] = {
+    model: imageModel,
+    size: size as `${number}x${number}`,
+    abortSignal: signal,
+    prompt: referenceImages?.length
+      ? {
+          text: prompt,
+          images: referenceImages.map(img => {
+            // Ensure proper data URL format
+            if (img.startsWith('data:')) {
+              return img;
+            }
+            return `data:image/png;base64,${img}`;
+          }),
+        }
+      : prompt,
+  };
+
+  const result = await sdkGenerateImage(generateOptions);
+
+  // Get the first image
+  const image = result.images?.[0] ?? result.image;
+  if (!image) {
+    throw new Error('No image data returned from provider');
+  }
+
+  return {
+    base64: image.base64,
+    revisedPrompt: undefined, // SDK doesn't expose this consistently
+  };
 }

@@ -4,7 +4,7 @@
   import { settings } from '$lib/stores/settings.svelte';
   import { database } from '$lib/services/database';
   import { imageExportService } from '$lib/services/imageExport';
-  import { ImageGenerationService } from '$lib/services/ai/image/ImageGenerationService';
+  import { retryImageGeneration } from '$lib/services/ai/image';
   import { promptService } from '$lib/services/prompts';
   import { DEFAULT_FALLBACK_STYLE_PROMPT } from '$lib/services/ai/image/constants';
   import type { EmbeddedImage } from '$lib/types';
@@ -245,7 +245,7 @@
     closeLightbox();
 
     // Use centralized retry logic from ImageGenerationService
-    await ImageGenerationService.retryImageGeneration(editingImageId, fullPrompt);
+    await retryImageGeneration(editingImageId, fullPrompt);
 
     editingImageId = null;
     editingImagePrompt = '';
@@ -284,7 +284,7 @@
     closeLightbox();
 
     // Use centralized retry logic
-    await ImageGenerationService.retryImageGeneration(image.id, finalPrompt);
+    await retryImageGeneration(image.id, finalPrompt);
 
     // Refresh gallery images
     await refreshImages();

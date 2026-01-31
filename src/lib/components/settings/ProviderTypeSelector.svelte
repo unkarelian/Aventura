@@ -33,10 +33,24 @@
       description: "Claude models",
     },
     {
-      value: "google",
-      label: "Google AI",
-      description: "Gemini models (coming soon)",
-      disabled: true,
+      value: 'google',
+      label: 'Google AI',
+      description: 'Gemini models',
+    },
+    {
+      value: 'nanogpt',
+      label: 'NanoGPT',
+      description: 'Pay-as-you-go LLMs and image generation',
+    },
+    {
+      value: 'chutes',
+      label: 'Chutes',
+      description: 'Text and image generation',
+    },
+    {
+      value: 'pollinations',
+      label: 'Pollinations',
+      description: 'Free image generation (no API key needed)',
     },
   ];
 

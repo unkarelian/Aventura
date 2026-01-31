@@ -36,10 +36,7 @@
     type ImageAnalysisFailedEvent,
     type TTSQueuedEvent,
   } from "$lib/services/events";
-  import { NanoGPTImageProvider } from "$lib/services/ai/image/providers/NanoGPTProvider";
-  import { ChutesImageProvider } from "$lib/services/ai/image/providers/ChutesProvider";
-  import { ImageGenerationService } from "$lib/services/ai/image/ImageGenerationService";
-  import { inlineImageService } from "$lib/services/ai/image/InlineImageService";
+  import { inlineImageService, retryImageGeneration } from "$lib/services/ai/image";
   import { promptService } from "$lib/services/prompts";
   import { onMount } from "svelte";
   import ReasoningBlock from "./ReasoningBlock.svelte";
@@ -652,7 +649,7 @@
 
     try {
       // Use centralized retry logic from ImageGenerationService
-      await ImageGenerationService.retryImageGeneration(imageId, finalPrompt);
+      await retryImageGeneration(imageId, finalPrompt);
 
       // Reload images to show updated state
       await loadEmbeddedImages();

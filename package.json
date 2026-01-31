@@ -15,6 +15,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.29",
     "@ai-sdk/openai": "^3.0.21",
+    "@chutes-ai/ai-sdk-provider": "^0.1.2",
     "@openrouter/ai-sdk-provider": "^2.1.1",
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-dialog": "^2",
@@ -26,6 +27,7 @@
     "@tauri-apps/plugin-updater": "^2.9.0",
     "@tutorlatin/svelte-tiny-virtual-list": "^3.0.18",
     "ai": "^6.0.59",
+    "ai-sdk-pollinations": "^0.0.1",
     "clsx": "^2.1.1",
     "gpt-tokenizer": "^3.4.0",
     "harper.js": "^1.2.0",

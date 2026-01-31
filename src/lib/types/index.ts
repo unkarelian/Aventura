@@ -629,10 +629,13 @@ export interface UIState {
 
 // Provider types matching Vercel AI SDK providers
 export type ProviderType =
-  | 'openrouter'   // @openrouter/ai-sdk-provider
-  | 'openai'       // @ai-sdk/openai (also for Azure, NIM, local LLMs, etc.)
-  | 'anthropic'    // @ai-sdk/anthropic
-  | 'google';      // @ai-sdk/google (future)
+  | 'openrouter'    // @openrouter/ai-sdk-provider
+  | 'openai'        // @ai-sdk/openai
+  | 'anthropic'     // @ai-sdk/anthropic
+  | 'google'        // @ai-sdk/google
+  | 'nanogpt'       // OpenAI-compatible at nano-gpt.com
+  | 'chutes'        // @chutes-ai/ai-sdk-provider
+  | 'pollinations'; // ai-sdk-pollinations
 
 // API Profile for saving OpenAI-compatible endpoint configurations
 export interface APIProfile {

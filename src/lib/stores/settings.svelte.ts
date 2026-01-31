@@ -498,15 +498,12 @@ export function getDefaultUpdateSettings(): UpdateSettings {
 }
 
 // Image Generation settings (automatic image generation for narrative)
-export type ImageProviderType = 'nanogpt' | 'chutes' | 'pollinations';
-
 export interface ImageGenerationServiceSettings {
   enabled: boolean;               // Toggle for image generation (default: false)
-  imageProvider: ImageProviderType; // Selected image provider (default: 'nanogpt')
-  nanoGptApiKey: string;          // NanoGPT API key for image generation
-  chutesApiKey: string;           // Chutes API key for image generation
-  pollinationsApiKey: string;     // Pollinations API key for image generation
-  model: string;                  // Image model (default: 'z-image-turbo')
+
+  // Profile-based image generation (profiles must have supportsImageGeneration capability)
+  profileId: string | null;       // API profile for standard image generation
+  model: string;                  // Image model for the selected profile
   styleId: string;                // Selected image style template
   size: '512x512' | '1024x1024' | '2048x2048';  // Image size
   maxImagesPerMessage: number;    // Max images per narrative (0 = unlimited, default: 3)
@@ -514,8 +511,10 @@ export interface ImageGenerationServiceSettings {
 
   // Portrait mode settings (character reference images)
   portraitMode: boolean;          // Enable portrait reference mode (default: false)
-  portraitModel: string;          // Model for generating character portraits (default: 'z-image-turbo')
-  referenceModel: string;         // Model for image generation with reference (default: 'qwen-image' for nanogpt, 'qwen-image-edit-2511' for chutes)
+  portraitProfileId: string | null;   // API profile for generating character portraits
+  portraitModel: string;          // Model for generating character portraits
+  referenceProfileId: string | null;  // API profile for image-to-image with portrait references
+  referenceModel: string;         // Model for image generation with reference
 
   // Scene analysis model settings (for identifying imageable scenes)
   promptProfileId: string | null; // API profile for scene analysis
@@ -530,20 +529,19 @@ export interface ImageGenerationServiceSettings {
 export function getDefaultImageGenerationSettings(): ImageGenerationServiceSettings {
   return {
     enabled: false,
-    imageProvider: 'nanogpt',
-    nanoGptApiKey: '',
-    chutesApiKey: '',
-    pollinationsApiKey: '',
-    model: 'z-image-turbo',
+    profileId: null,              // User must select an image-capable profile
+    model: 'flux',                // Common default across providers
     styleId: 'image-style-soft-anime',
     size: '1024x1024',
     maxImagesPerMessage: 3,
     autoGenerate: true,
     portraitMode: false,
-    portraitModel: 'z-image-turbo',
-    referenceModel: 'qwen-image',
-    promptProfileId: DEFAULT_OPENROUTER_PROFILE_ID,
-    promptModel: 'x-ai/grok-4-fast',
+    portraitProfileId: null,
+    portraitModel: 'flux',
+    referenceProfileId: null,
+    referenceModel: 'kontext',    // Common reference/editing model
+    promptProfileId: null,        // Use default profile for scene analysis
+    promptModel: '',              // Empty = use profile default
     promptTemperature: 0.3,
     promptMaxTokens: 16384,
     reasoningEffort: 'high',
@@ -552,29 +550,10 @@ export function getDefaultImageGenerationSettings(): ImageGenerationServiceSetti
   };
 }
 
-export function getDefaultImageGenerationSettingsForProvider(provider: ProviderType): ImageGenerationServiceSettings {
-  return {
-    enabled: false,
-    imageProvider: 'nanogpt',
-    nanoGptApiKey: '',
-    chutesApiKey: '',
-    pollinationsApiKey: '',
-    model: 'z-image-turbo',
-    styleId: 'image-style-soft-anime',
-    size: '1024x1024',
-    maxImagesPerMessage: 3,
-    autoGenerate: true,
-    portraitMode: false,
-    portraitModel: 'z-image-turbo',
-    referenceModel: 'qwen-image',
-    promptProfileId: null,  // Use default profile
-    promptModel: 'x-ai/grok-4-fast',
-    promptTemperature: 0.3,
-    promptMaxTokens: 16384,
-    reasoningEffort: 'high',
-    providerOnly: [],
-    manualBody: '',
-  };
+export function getDefaultImageGenerationSettingsForProvider(_provider: ProviderType): ImageGenerationServiceSettings {
+  // Profile selection determines available models, so use generic defaults here
+  // The UI will show appropriate models based on the selected profile's provider
+  return getDefaultImageGenerationSettings();
 }
 
 // Text-To-Speech settings (TTS narration audio generation)
