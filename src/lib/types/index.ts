@@ -625,7 +625,11 @@ export interface APIProfile {
   customModels: string[];     // Manually added models
   fetchedModels: string[];    // Auto-fetched from /models endpoint
   createdAt: number;          // Timestamp
+  jsonSupport?: JSONSupportLevel; // JSON structured output support level
 }
+
+// JSON support level for structured output
+export type JSONSupportLevel = 'none' | 'json_object' | 'json_schema';
 
 // API Settings
 export interface APISettings {
@@ -841,5 +845,4 @@ export interface VaultTag {
   color: string;
   createdAt: number;
 }
-
 

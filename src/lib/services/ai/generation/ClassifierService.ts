@@ -2,6 +2,8 @@ import { BaseAIService, type OpenAIProvider } from '../core/BaseAIService';
 import type { Character, Location, Item, StoryBeat, StoryEntry, TimeTracker, GenerationPreset } from '$lib/types';
 import { promptService, type PromptContext } from '$lib/services/prompts';
 import { tryParseJsonWithHealing } from '../utils/jsonHealing';
+import {getJsonSupportLevel} from '../jsonSupport';
+import {buildResponseFormat, maybeInjectJsonInstructions} from '../jsonInstructions';
 import { createLogger } from '../core/config';
 
 const log = createLogger('Classifier');
@@ -138,8 +140,9 @@ export class ClassifierService extends BaseAIService {
     super(provider, presetId, settingsOverride);
     this.chatHistoryTruncation = chatHistoryTruncation;
   }
-
   async classify(context: ClassificationContext): Promise<ClassificationResult> {
+    const jsonSupportLevel = getJsonSupportLevel(this.presetId);
+
     log('classify called', {
       model: this.model,
       temperature: this.temperature,
@@ -150,11 +153,15 @@ export class ClassifierService extends BaseAIService {
       existingItems: context.existingItems.length,
       chatHistoryEntries: context.chatHistory?.length ?? 0,
       currentStoryTime: context.currentStoryTime,
+      jsonSupport: jsonSupportLevel,
     });
 
     const prompt = this.buildClassificationPrompt(context);
     const promptContext = this.buildPromptContext(context);
     const systemPrompt = promptService.renderPrompt('classifier', promptContext);
+
+    const responseFormat = buildResponseFormat('classifier', jsonSupportLevel);
+    const finalPrompt = maybeInjectJsonInstructions(prompt, 'classifier', jsonSupportLevel);
 
     try {
       log('Sending classification request...');
@@ -163,11 +170,12 @@ export class ClassifierService extends BaseAIService {
         model: this.model,
         messages: [
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: prompt }
+          { role: 'user', content: finalPrompt }
         ],
         temperature: this.temperature,
         maxTokens: this.maxTokens,
         extraBody: this.extraBody,
+        responseFormat,
       });
 
       log('Classification response received', {

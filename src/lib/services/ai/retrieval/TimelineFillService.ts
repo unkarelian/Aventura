@@ -3,6 +3,8 @@ import type { Chapter, StoryEntry, TimeTracker, Location, GenerationPreset } fro
 import { promptService, type PromptContext, type StoryMode, type POV, type Tense } from '$lib/services/prompts';
 import { tryParseJsonWithHealing } from '../utils/jsonHealing';
 import { createLogger } from '../core/config';
+import {getJsonSupportLevel} from '../jsonSupport';
+import {buildResponseFormat, maybeInjectJsonInstructions} from '../jsonInstructions';
 
 // Format time tracker for timeline display (always shows full format)
 function formatTime(time: TimeTracker | null): string {
@@ -176,17 +178,22 @@ export class TimelineFillService extends BaseAIService {
       timeline: JSON.stringify(timeline, null, 2),
     });
 
+    const jsonSupportLevel = getJsonSupportLevel(this.presetId);
+    const responseFormat = buildResponseFormat('timeline-fill', jsonSupportLevel);
+    const finalPrompt = maybeInjectJsonInstructions(prompt, 'timeline-fill', jsonSupportLevel);
+
     try {
       const response = await this.provider.generateResponse({
         model: this.model,
         messages: [
           { role: 'system', content: promptService.renderPrompt('timeline-fill', promptContext) },
-          { role: 'user', content: prompt },
+          { role: 'user', content: finalPrompt },
         ],
         temperature: this.temperature,
         maxTokens: this.maxTokens,
         extraBody: this.extraBody,
         signal,
+        responseFormat, // Use responseFormat for structured output
       });
 
       return this.parseQueriesResponse(response.content, chapters);
@@ -370,17 +377,22 @@ export class TimelineFillService extends BaseAIService {
       query: query.query,
     });
 
+    const jsonSupportLevel = getJsonSupportLevel(this.presetId);
+    const responseFormat = buildResponseFormat('timeline-fill-answer', jsonSupportLevel);
+    const finalPrompt = maybeInjectJsonInstructions(prompt, 'timeline-fill-answer', jsonSupportLevel);
+
     try {
       const response = await this.provider.generateResponse({
         model: this.model,
         messages: [
           { role: 'system', content: promptService.renderPrompt('timeline-fill-answer', promptContext) },
-          { role: 'user', content: prompt },
+          { role: 'user', content: finalPrompt },
         ],
         temperature: 0.2, // Lower temperature for deterministic factual answers
         maxTokens: this.maxTokens,
         extraBody: this.extraBody,
         signal,
+        responseFormat, // Use responseFormat for structured output
       });
 
       return {

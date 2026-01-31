@@ -2,6 +2,8 @@ import { BaseAIService, type OpenAIProvider } from '../core/BaseAIService';
 import type { Chapter, StoryEntry, MemoryConfig, TimeTracker, GenerationPreset } from '$lib/types';
 import { promptService, type PromptContext, type StoryMode, type POV, type Tense } from '$lib/services/prompts';
 import { tryParseJsonWithHealing } from '../utils/jsonHealing';
+import {getJsonSupportLevel} from '../jsonSupport';
+import {buildResponseFormat, maybeInjectJsonInstructions} from '../jsonInstructions';
 
 // Format time tracker for display in context (always shows full format)
 function formatTime(time: TimeTracker | null): string {
@@ -69,7 +71,6 @@ export class MemoryService extends BaseAIService {
   constructor(provider: OpenAIProvider, presetId: string = 'memory', settingsOverride?: Partial<GenerationPreset>) {
     super(provider, presetId, settingsOverride);
   }
-
   /**
    * Analyze if a new chapter should be created based on token count.
    * Triggered when tokens exceed threshold, excluding buffer messages.
@@ -139,16 +140,21 @@ export class MemoryService extends BaseAIService {
     const promptContext = this.getPromptContext(mode, pov, tense);
     const prompt = this.buildChapterAnalysisPrompt(chapterEntries, startIndex, promptContext);
 
+    const jsonSupportLevel = getJsonSupportLevel(this.presetId);
+    const responseFormat = buildResponseFormat('chapter-analysis', jsonSupportLevel);
+    const finalPrompt = maybeInjectJsonInstructions(prompt, 'chapter-analysis', jsonSupportLevel);
+
     try {
       const response = await this.provider.generateResponse({
         model: this.model,
         messages: [
           { role: 'system', content: promptService.renderPrompt('chapter-analysis', promptContext) },
-          { role: 'user', content: prompt },
+          { role: 'user', content: finalPrompt },
         ],
         temperature: this.temperature,
         maxTokens: this.maxTokens,
         extraBody: this.extraBody,
+        responseFormat, // Use responseFormat for structured output
       });
 
       const result = this.parseChapterAnalysis(response.content, startIndex, chapterEntries.length);
@@ -169,6 +175,7 @@ export class MemoryService extends BaseAIService {
    * Generate a summary and metadata for a chapter.
    * @param entries - The entries to summarize
    * @param previousChapters - Previous chapter summaries for context (optional)
+   * @param mode - Story mode from story settings
    * @param pov - Point of view from story settings
    * @param tense - Tense from story settings
    */
@@ -201,16 +208,21 @@ NOTE: Only use for reference. This is NOT what you will be summarizing.
       chapterContent: content,
     });
 
+    const jsonSupportLevel = getJsonSupportLevel(this.presetId);
+    const responseFormat = buildResponseFormat('chapter-summarization', jsonSupportLevel);
+    const finalPrompt = maybeInjectJsonInstructions(prompt, 'chapter-summarization', jsonSupportLevel);
+
     try {
       const response = await this.provider.generateResponse({
         model: this.model,
         messages: [
           { role: 'system', content: promptService.renderPrompt('chapter-summarization', promptContext) },
-          { role: 'user', content: prompt },
+          { role: 'user', content: finalPrompt },
         ],
         temperature: this.temperature,
         maxTokens: this.maxTokens,
         extraBody: this.extraBody,
+        responseFormat, // Use responseFormat for structured output
       });
 
       return this.parseChapterSummary(response.content);
@@ -259,6 +271,11 @@ NOTE: Only use for reference. This is NOT what you will be summarizing.
   /**
    * Decide which chapters are relevant for the current context.
    * Per design doc section 3.1.3: Retrieval Flow
+   * @param userInput
+   * @param recentEntries
+   * @param chapters
+   * @param config
+   * @param mode
    * @param pov - Point of view from story settings
    * @param tense - Tense from story settings
    */
@@ -301,16 +318,21 @@ NOTE: Only use for reference. This is NOT what you will be summarizing.
       maxChaptersPerRetrieval: config.maxChaptersPerRetrieval,
     });
 
+    const jsonSupportLevel = getJsonSupportLevel(this.presetId);
+    const responseFormat = buildResponseFormat('retrieval-decision', jsonSupportLevel);
+    const finalPrompt = maybeInjectJsonInstructions(prompt, 'retrieval-decision', jsonSupportLevel);
+
     try {
       const response = await this.provider.generateResponse({
         model: this.model,
         messages: [
           { role: 'system', content: promptService.renderPrompt('retrieval-decision', promptContext) },
-          { role: 'user', content: prompt },
+          { role: 'user', content: finalPrompt },
         ],
         temperature: this.temperature,
         maxTokens: this.maxTokens,
         extraBody: this.extraBody,
+        responseFormat, // Use responseFormat for structured output
       });
 
       return this.parseRetrievalDecision(response.content, config.maxChaptersPerRetrieval);
