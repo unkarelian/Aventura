@@ -87,59 +87,21 @@
     const threshold = 50; // pixels from bottom
     return storyContainer.scrollHeight - storyContainer.scrollTop - storyContainer.clientHeight < threshold;
   }
-  // Check if a wheel or touch scroll event should be ignored because it's handled by a scrollable child
-  function isScrollHandledByChild(target: HTMLElement, deltaY: number): boolean {
-    let current = target;
-    while (current && current !== storyContainer) {
-      // Check if this ancestor is scrollable
-      const style = window.getComputedStyle(current);
-      const isScrollable = style.overflowY === 'auto' || style.overflowY === 'scroll';
-      
-      if (isScrollable && current.scrollHeight > current.clientHeight) {
-        // If we're scrolling UP and the element has space to scroll UP
-        if (deltaY < 0 && current.scrollTop > 0) return true;
-        // If we're scrolling DOWN and the element has space to scroll DOWN
-        if (deltaY > 0 && current.scrollTop + current.clientHeight < current.scrollHeight) return true;
-      }
-      current = current.parentElement as HTMLElement;
-    }
-    return false;
-  }
-
-  // Handle wheel events to break auto-scroll on manual wheel-up
-  function handleWheel(e: WheelEvent) {
-    if (isScrollHandledByChild(e.target as HTMLElement, e.deltaY)) return;
-
-    if (e.deltaY < 0 && !ui.userScrolledUp) {
-      ui.setScrollBreak(true);
-    }
-  }
-
-  let touchStartY = 0;
-
-  function handleTouchStart(e: TouchEvent) {
-    touchStartY = e.touches[0].clientY;
-  }
-
-  function handleTouchMove(e: TouchEvent) {
-    const touchY = e.touches[0].clientY;
-    const deltaY = touchStartY - touchY; // Positive when scrolling DOWN (swipe UP)
-    
-    // Breaking scroll on manual scroll-up (swipe DOWN / deltaY < 0)
-    if (deltaY < 0 && !ui.userScrolledUp) {
-      if (!isScrollHandledByChild(e.target as HTMLElement, deltaY)) {
-        ui.setScrollBreak(true);
-      }
-    }
-  }
-
   // Handle scroll events during streaming
   function handleScroll() {
+    if (!storyContainer) return;
+
     // Keep userScrolledUp in sync with actual scroll position
     // This allows re-engaging auto-scroll when the user scrolls back to bottom
     const nearBottom = isNearBottom();
-    if (nearBottom && ui.userScrolledUp) {
-      ui.setScrollBreak(false);
+    
+    // Update the break state based on current scroll position
+    // If we are near bottom, we are NOT "scrolled up"
+    // If we are NOT near bottom, we ARE "scrolled up"
+    if (nearBottom) {
+      if (ui.userScrolledUp) ui.setScrollBreak(false);
+    } else {
+      if (!ui.userScrolledUp) ui.setScrollBreak(true);
     }
   }
 
@@ -185,9 +147,6 @@
     bind:clientHeight={containerHeight}
     class="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4"
     onscroll={handleScroll}
-    onwheel={handleWheel}
-    ontouchstart={handleTouchStart}
-    ontouchmove={handleTouchMove}
   >
     <div class="mx-auto max-w-3xl space-y-3 sm:space-y-4" bind:clientHeight={innerHeight}>
       {#if story.entries.length === 0 && !ui.isStreaming}
