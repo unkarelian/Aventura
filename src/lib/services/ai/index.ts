@@ -13,9 +13,9 @@
  * - runTimelineFill(), answerChapterQuestion(), answerChapterRangeQuestion() - TimelineFillService
  * - buildTieredContext(), getRelevantLorebookEntries() - ContextBuilder/EntryRetrievalService
  * - analyzeStyle() - StyleReviewerService
+ * - runLoreManagement() - LoreManagementService
  *
  * STUBBED (awaiting migration):
- * - runLoreManagement() - LoreManagementService
  * - runAgenticRetrieval() - AgenticRetrievalService
  * - translate*() - TranslationService
  * - generateImagesForNarrative() (analyzed mode) - ImageGenerationService
@@ -52,7 +52,7 @@ export interface ImageGenerationContext {
 }
 import type { TranslationResult, UITranslationItem } from './utils/TranslationService';
 import type { StreamChunk } from './core/types';
-import type { Story, StoryEntry, Character, Location, Item, StoryBeat, Chapter, MemoryConfig, Entry, LoreManagementResult, TimeTracker } from '$lib/types';
+import type { Story, StoryEntry, Character, Location, Item, StoryBeat, Chapter, MemoryConfig, Entry, LoreManagementResult, LoreChange, TimeTracker } from '$lib/types';
 import { createLogger } from './core/config';
 import { serviceFactory } from './core/factory';
 import { NarrativeService } from './generation/NarrativeService';
@@ -417,7 +417,7 @@ class AIService {
 
   /**
    * Run a lore management session.
-   * @throws Error - Service not implemented during SDK migration
+   * Analyzes recent narrative and updates lorebook entries accordingly.
    */
   async runLoreManagement(
     storyId: string,
@@ -436,7 +436,62 @@ class AIService {
     pov?: POV,
     tense?: Tense
   ): Promise<LoreManagementResult> {
-    throw new Error('AIService.runLoreManagement() not implemented - awaiting SDK migration');
+    // Extract recent user action and narrative
+    const recentNarration = recentMessages.filter(m => m.type === 'narration');
+    const recentActions = recentMessages.filter(m => m.type === 'user_action');
+
+    const narrativeResponse = recentNarration.length > 0
+      ? recentNarration[recentNarration.length - 1].content
+      : '';
+    const userAction = recentActions.length > 0
+      ? recentActions[recentActions.length - 1].content
+      : '';
+
+    // Build chapter summaries if available
+    const chapterSummaries = chapters.length > 0
+      ? chapters.map(c => `Chapter ${c.number}: ${c.summary}`).join('\n\n')
+      : undefined;
+
+    // Create service and run session
+    const service = serviceFactory.createLoreManagementService();
+    const sessionResult = await service.runSession({
+      storyId,
+      narrativeResponse,
+      userAction,
+      existingEntries: entries,
+      chapterSummaries,
+    });
+
+    // Build changes array for the result
+    const changes: LoreChange[] = [];
+
+    // Apply changes via callbacks and build changes array
+    for (const entry of sessionResult.createdEntries) {
+      // Assign proper ID before creating
+      const newEntry: Entry = {
+        ...entry,
+        id: crypto.randomUUID(),
+        branchId,
+      };
+      await callbacks.onCreateEntry(newEntry);
+      changes.push({ type: 'create', entry: newEntry });
+    }
+
+    for (const entry of sessionResult.updatedEntries) {
+      await callbacks.onUpdateEntry(entry.id, entry);
+      changes.push({ type: 'update', entry });
+    }
+
+    log('runLoreManagement complete', {
+      created: sessionResult.createdEntries.length,
+      updated: sessionResult.updatedEntries.length,
+    });
+
+    return {
+      changes,
+      summary: sessionResult.reasoning ?? 'Lore management session completed.',
+      sessionId: crypto.randomUUID(),
+    };
   }
 
   /**
