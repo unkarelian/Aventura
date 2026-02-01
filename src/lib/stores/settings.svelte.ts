@@ -10,6 +10,7 @@ import { promptService, type PromptSettings, getDefaultPromptSettings } from '$l
 import type { ReasoningEffort } from '$lib/types';
 import { ui } from '$lib/stores/ui.svelte';
 import { getTheme } from '../../themes/themes';
+import { LLM_TIMEOUT_DEFAULT, LLM_TIMEOUT_MIN, LLM_TIMEOUT_MAX } from '$lib/constants/timeout';
 
 // Provider preset types
 // 'custom' uses OpenRouter defaults but allows user to configure their own API endpoint
@@ -1263,6 +1264,8 @@ class SettingsStore {
     providerOnly: [],
     manualBody: '',
     enableThinking: false,
+    llmTimeoutMs: LLM_TIMEOUT_DEFAULT,
+    useNativeTimeout: false,
   });
 
   uiSettings = $state<UISettings>({
@@ -1489,6 +1492,21 @@ class SettingsStore {
       const defaultProfileId = await database.getSetting('default_profile_id');
       if (defaultProfileId) {
         this.apiSettings.defaultProfileId = defaultProfileId;
+      }
+
+      // Load LLM timeout
+      const llmTimeoutMs = await database.getSetting('llm_timeout_ms');
+      if (llmTimeoutMs) {
+        const parsed = parseInt(llmTimeoutMs, 10);
+        if (!isNaN(parsed) && parsed >= LLM_TIMEOUT_MIN && parsed <= LLM_TIMEOUT_MAX) {
+          this.apiSettings.llmTimeoutMs = parsed;
+        }
+      }
+
+      // Load native timeout setting
+      const useNativeTimeout = await database.getSetting('use_native_timeout');
+      if (useNativeTimeout !== null) {
+        this.apiSettings.useNativeTimeout = useNativeTimeout === 'true';
       }
 
       // Load provider preset (which provider's defaults to use)
@@ -1881,6 +1899,16 @@ class SettingsStore {
   async setMaxTokens(tokens: number) {
     this.apiSettings.maxTokens = tokens;
     await database.setSetting('max_tokens', tokens.toString());
+  }
+
+  async setLlmTimeout(timeoutMs: number) {
+    this.apiSettings.llmTimeoutMs = timeoutMs;
+    await database.setSetting('llm_timeout_ms', timeoutMs.toString());
+  }
+
+  async setUseNativeTimeout(useNative: boolean) {
+    this.apiSettings.useNativeTimeout = useNative;
+    await database.setSetting('use_native_timeout', useNative.toString());
   }
 
   async setEnableThinking(enabled: boolean) {
@@ -2743,6 +2771,8 @@ class SettingsStore {
       providerOnly: [],
       manualBody: '',
       enableThinking: false,
+      llmTimeoutMs: LLM_TIMEOUT_DEFAULT,
+      useNativeTimeout: false,
     };
 
     // Reset UI settings
