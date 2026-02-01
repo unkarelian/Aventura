@@ -12,6 +12,7 @@
 
   let storyContainer: HTMLDivElement;
   let containerHeight = $state(0);
+  let innerHeight = $state(0);
 
   // Virtualization: Only render recent entries by default for performance
   // This dramatically improves performance with large stories (80k+ words)
@@ -86,11 +87,9 @@
     const threshold = 50; // pixels from bottom
     return storyContainer.scrollHeight - storyContainer.scrollTop - storyContainer.clientHeight < threshold;
   }
-  // Handle wheel events to break auto-scroll on manual wheel-up
-  function handleWheel(e: WheelEvent) {
-    // Check if the wheel event originated from an inner scrollable element
-    // If so, and that element can still scroll in the given direction, we should ignore it
-    let current = e.target as HTMLElement;
+  // Check if a wheel or touch scroll event should be ignored because it's handled by a scrollable child
+  function isScrollHandledByChild(target: HTMLElement, deltaY: number): boolean {
+    let current = target;
     while (current && current !== storyContainer) {
       // Check if this ancestor is scrollable
       const style = window.getComputedStyle(current);
@@ -98,15 +97,39 @@
       
       if (isScrollable && current.scrollHeight > current.clientHeight) {
         // If we're scrolling UP and the element has space to scroll UP
-        if (e.deltaY < 0 && current.scrollTop > 0) return;
+        if (deltaY < 0 && current.scrollTop > 0) return true;
         // If we're scrolling DOWN and the element has space to scroll DOWN
-        if (e.deltaY > 0 && current.scrollTop + current.clientHeight < current.scrollHeight) return;
+        if (deltaY > 0 && current.scrollTop + current.clientHeight < current.scrollHeight) return true;
       }
       current = current.parentElement as HTMLElement;
     }
+    return false;
+  }
+
+  // Handle wheel events to break auto-scroll on manual wheel-up
+  function handleWheel(e: WheelEvent) {
+    if (isScrollHandledByChild(e.target as HTMLElement, e.deltaY)) return;
 
     if (e.deltaY < 0 && !ui.userScrolledUp) {
       ui.setScrollBreak(true);
+    }
+  }
+
+  let touchStartY = 0;
+
+  function handleTouchStart(e: TouchEvent) {
+    touchStartY = e.touches[0].clientY;
+  }
+
+  function handleTouchMove(e: TouchEvent) {
+    const touchY = e.touches[0].clientY;
+    const deltaY = touchStartY - touchY; // Positive when scrolling DOWN (swipe UP)
+    
+    // Breaking scroll on manual scroll-up (swipe DOWN / deltaY < 0)
+    if (deltaY < 0 && !ui.userScrolledUp) {
+      if (!isScrollHandledByChild(e.target as HTMLElement, deltaY)) {
+        ui.setScrollBreak(true);
+      }
     }
   }
 
@@ -127,15 +150,10 @@
 
 
   $effect(() => {
-    // Track entries, streaming state, and generation status for scroll
+    // Track primary scroll-inducing changes
     const currentCount = story.entries.length;
-    const _ = ui.streamingContent;
-    const __ = ui.generationStatus;
-    const ___ = ui.isGenerating;
-    const ____ = containerHeight;
-    const _____ = ui.actionChoicesLoading;
-    const ______ = ui.isReasoningExpanded;
-    const _______ = ui.streamingReasoning
+    const _ = innerHeight;
+    const __ = containerHeight;
 
     // Detect if entries were added (vs deleted or unchanged)
     const wasAdded = currentCount > prevEntryCount;
@@ -144,7 +162,9 @@
     // Detect if we should scroll: 
     // 1. We are NOT user-scrolled-up (pinned mode)
     // 2. OR on user action send message/retry
-    const shouldScroll = !ui.userScrolledUp || (wasAdded && ['user_action', 'retry'].includes(story.entries[story.entries.length - 1].type));
+    const lastEntry = story.entries[story.entries.length - 1];
+    const shouldScroll = !ui.userScrolledUp || (wasAdded && lastEntry && ['user_action', 'retry'].includes(lastEntry.type));
+    
     if (!shouldScroll) return;
 
     scrollToBottom();
@@ -166,8 +186,10 @@
     class="flex-1 overflow-y-auto px-3 sm:px-6 py-3 sm:py-4"
     onscroll={handleScroll}
     onwheel={handleWheel}
+    ontouchstart={handleTouchStart}
+    ontouchmove={handleTouchMove}
   >
-    <div class="mx-auto max-w-3xl space-y-3 sm:space-y-4">
+    <div class="mx-auto max-w-3xl space-y-3 sm:space-y-4" bind:clientHeight={innerHeight}>
       {#if story.entries.length === 0 && !ui.isStreaming}
         <EmptyState
           icon={BookOpen}
