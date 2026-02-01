@@ -14,16 +14,16 @@
  * - buildTieredContext(), getRelevantLorebookEntries() - ContextBuilder/EntryRetrievalService
  * - analyzeStyle() - StyleReviewerService
  * - runLoreManagement() - LoreManagementService
+ * - generateImagesForNarrative() (both inline and analyzed modes) - ImageAnalysisService
  *
  * STUBBED (awaiting migration):
  * - runAgenticRetrieval() - AgenticRetrievalService
  * - translate*() - TranslationService
- * - generateImagesForNarrative() (analyzed mode) - ImageGenerationService
  */
 
 import { settings } from '$lib/stores/settings.svelte';
 import { story } from '$lib/stores/story.svelte';
-import type { PromptContext, StoryMode, POV, Tense } from '$lib/services/prompts';
+import { promptService, type PromptContext, type StoryMode, type POV, type Tense } from '$lib/services/prompts';
 import { ClassifierService, type ClassificationContext } from './generation/ClassifierService';
 import type { ClassificationResult } from './sdk/schemas/classifier';
 import { MemoryService, type RetrievalContext } from './generation/MemoryService';
@@ -35,7 +35,13 @@ import type { AgenticRetrievalResult } from './retrieval/AgenticRetrievalService
 import type { TimelineFillResult } from './retrieval/TimelineFillService';
 import { ContextBuilder, type ContextResult, type ContextConfig } from './generation/ContextBuilder';
 import { EntryRetrievalService, type EntryRetrievalResult, type ActivationTracker, getEntryRetrievalConfigFromSettings } from './retrieval/EntryRetrievalService';
-import { inlineImageService, type InlineImageContext, isImageGenerationEnabled } from './image';
+import { inlineImageService, type InlineImageContext, isImageGenerationEnabled, ImageAnalysisService, type ImageAnalysisContext } from './image';
+import { emitImageAnalysisStarted, emitImageAnalysisComplete, emitImageAnalysisFailed, emitImageQueued, emitImageReady } from '$lib/services/events';
+import { database } from '$lib/services/database';
+import { generateImage as sdkGenerateImage } from './sdk/generate';
+import { normalizeImageDataUrl } from '$lib/utils/image';
+import type { ImageableScene } from './sdk/schemas/imageanalysis';
+import type { EmbeddedImage } from '$lib/types';
 
 // Re-export ImageGenerationContext type for backwards compatibility
 export interface ImageGenerationContext {
@@ -646,7 +652,9 @@ class AIService {
 
   /**
    * Generate images for a narrative response.
-   * @throws Error - Scene analysis not implemented during SDK migration
+   * Supports two modes:
+   * - Inline mode: Process <pic> tags from AI response
+   * - Analyzed mode: Use LLM to identify imageable scenes
    */
   async generateImagesForNarrative(context: ImageGenerationContext): Promise<void> {
     log('generateImagesForNarrative called', {
@@ -668,7 +676,6 @@ class AIService {
     try {
       if (inlineImageMode) {
         // Use inline image generation (process <pic> tags from AI response)
-        // This works without SDK - it just processes tags and calls image providers
         const narrativeToProcess = context.translatedNarrative || context.narrativeResponse;
         log('Using inline image mode', {
           usingTranslated: !!context.translatedNarrative,
@@ -681,13 +688,296 @@ class AIService {
         };
         await inlineImageService.processNarrativeForInlineImages(inlineContext);
       } else {
-        // Analyzed mode requires LLM scene analysis - stubbed
-        throw new Error('Analyzed image mode not implemented - scene analysis awaiting SDK migration');
+        // Analyzed mode: Use LLM to identify imageable scenes
+        log('Using analyzed image mode');
+        await this.runAnalyzedImageGeneration(context);
       }
     } catch (error) {
       log('Image generation failed (non-fatal)', error);
       // Don't throw - image generation failure shouldn't break the main flow
     }
+  }
+
+  /**
+   * Run analyzed image generation mode.
+   * Uses LLM to identify visually striking moments in narrative text.
+   */
+  private async runAnalyzedImageGeneration(context: ImageGenerationContext): Promise<void> {
+    const imageSettings = settings.systemServicesSettings.imageGeneration;
+    const portraitMode = imageSettings.portraitMode ?? false;
+
+    // Get characters with/without portraits
+    const presentCharacterNames = context.presentCharacters.map(c => c.name.toLowerCase());
+    const charactersWithPortraits = story.characters
+      .filter(c => presentCharacterNames.includes(c.name.toLowerCase()) && c.portrait)
+      .map(c => c.name);
+    const charactersWithoutPortraits = story.characters
+      .filter(c => presentCharacterNames.includes(c.name.toLowerCase()) && !c.portrait)
+      .map(c => c.name);
+
+    // Build style prompt
+    const stylePrompt = this.getStylePrompt(imageSettings.styleId);
+
+    // Build analysis context
+    const analysisContext: ImageAnalysisContext = {
+      narrativeResponse: context.narrativeResponse,
+      userAction: context.userAction,
+      presentCharacters: context.presentCharacters.map(c => ({
+        name: c.name,
+        visualDescriptors: c.visualDescriptors,
+      })),
+      currentLocation: context.currentLocation,
+      stylePrompt,
+      maxImages: imageSettings.maxImagesPerMessage ?? 3,
+      chatHistory: context.chatHistory,
+      lorebookContext: context.lorebookContext,
+      charactersWithPortraits,
+      charactersWithoutPortraits,
+      portraitMode,
+      translatedNarrative: context.translatedNarrative,
+      translationLanguage: context.translationLanguage,
+    };
+
+    // Emit analysis started
+    emitImageAnalysisStarted(context.entryId);
+
+    try {
+      // Create service and identify scenes
+      const analysisService = serviceFactory.createImageAnalysisService();
+      const scenes = await analysisService.identifyScenes(analysisContext);
+
+      if (scenes.length === 0) {
+        log('No imageable scenes identified');
+        emitImageAnalysisComplete(context.entryId, 0, 0);
+        return;
+      }
+
+      // Count portrait generations
+      const portraitCount = scenes.filter(s => s.generatePortrait).length;
+      const sceneCount = scenes.length - portraitCount;
+
+      log('Scenes identified', { total: scenes.length, scenes: sceneCount, portraits: portraitCount });
+      emitImageAnalysisComplete(context.entryId, sceneCount, portraitCount);
+
+      // Queue image generation for each scene
+      for (const scene of scenes) {
+        await this.queueAnalyzedImageGeneration(
+          context.storyId,
+          context.entryId,
+          scene,
+          imageSettings,
+          context.presentCharacters
+        );
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      log('Scene analysis failed', error);
+      emitImageAnalysisFailed(context.entryId, errorMessage);
+    }
+  }
+
+  /**
+   * Queue image generation for an analyzed scene.
+   */
+  private async queueAnalyzedImageGeneration(
+    storyId: string,
+    entryId: string,
+    scene: ImageableScene,
+    imageSettings: typeof settings.systemServicesSettings.imageGeneration,
+    presentCharacters: Character[]
+  ): Promise<void> {
+    const imageId = crypto.randomUUID();
+    const portraitMode = imageSettings.portraitMode ?? false;
+
+    // Determine profile and model
+    let profileId = imageSettings.profileId;
+    let modelToUse = imageSettings.model;
+    let referenceImageUrls: string[] | undefined;
+
+    // If portrait mode and scene has characters, look for reference images
+    if (portraitMode && scene.characters.length > 0 && !scene.generatePortrait) {
+      const portraitUrls: string[] = [];
+
+      for (const charName of scene.characters.slice(0, 3)) {
+        const character = presentCharacters.find(
+          c => c.name.toLowerCase() === charName.toLowerCase()
+        );
+        const portraitUrl = normalizeImageDataUrl(character?.portrait);
+        if (portraitUrl) {
+          portraitUrls.push(portraitUrl);
+        }
+      }
+
+      if (portraitUrls.length > 0) {
+        // Use reference profile and model for img2img
+        profileId = imageSettings.referenceProfileId || imageSettings.profileId;
+        modelToUse = imageSettings.referenceModel || imageSettings.model;
+        referenceImageUrls = portraitUrls;
+        log('Using character portraits as reference', {
+          characters: scene.characters,
+          count: portraitUrls.length,
+        });
+      }
+    }
+
+    // For portrait generation, use portrait-specific settings
+    if (scene.generatePortrait) {
+      profileId = imageSettings.portraitProfileId || imageSettings.profileId;
+      modelToUse = imageSettings.portraitModel || imageSettings.model;
+    }
+
+    if (!profileId) {
+      log('No image profile configured, skipping scene');
+      return;
+    }
+
+    // Build full prompt with style
+    const stylePrompt = this.getStylePrompt(imageSettings.styleId);
+    const fullPrompt = `${scene.prompt}. ${stylePrompt}`;
+
+    // Create pending record in database
+    const embeddedImage: Omit<EmbeddedImage, 'createdAt'> = {
+      id: imageId,
+      storyId,
+      entryId,
+      sourceText: scene.sourceText,
+      prompt: fullPrompt,
+      styleId: imageSettings.styleId,
+      model: modelToUse,
+      imageData: '',
+      width: imageSettings.size === '1024x1024' ? 1024 : (imageSettings.size === '2048x2048' ? 2048 : 512),
+      height: imageSettings.size === '1024x1024' ? 1024 : (imageSettings.size === '2048x2048' ? 2048 : 512),
+      status: 'pending',
+      generationMode: 'analyzed',
+    };
+
+    await database.createEmbeddedImage(embeddedImage);
+    log('Created pending analyzed image record', {
+      imageId,
+      sceneType: scene.sceneType,
+      priority: scene.priority,
+      isPortrait: scene.generatePortrait,
+    });
+
+    // Emit queued event
+    emitImageQueued(imageId, entryId);
+
+    // Start async generation (fire-and-forget)
+    this.generateAnalyzedImage(
+      imageId,
+      fullPrompt,
+      profileId!,
+      modelToUse!,
+      imageSettings.size,
+      entryId,
+      scene,
+      presentCharacters,
+      referenceImageUrls
+    ).catch(error => {
+      log('Async analyzed image generation failed', { imageId, error });
+    });
+  }
+
+  /**
+   * Generate a single analyzed image using the SDK (runs asynchronously).
+   */
+  private async generateAnalyzedImage(
+    imageId: string,
+    prompt: string,
+    profileId: string,
+    model: string,
+    size: string,
+    entryId: string,
+    scene: ImageableScene,
+    presentCharacters: Character[],
+    referenceImageUrls?: string[]
+  ): Promise<void> {
+    try {
+      // Update status to generating
+      await database.updateEmbeddedImage(imageId, { status: 'generating' });
+
+      log('Generating analyzed image via SDK', {
+        imageId,
+        profileId,
+        model,
+        sceneType: scene.sceneType,
+        hasReference: !!referenceImageUrls?.length,
+      });
+
+      // Generate image using SDK
+      const result = await sdkGenerateImage({
+        profileId,
+        model,
+        prompt,
+        size,
+        referenceImages: referenceImageUrls,
+      });
+
+      if (!result.base64) {
+        throw new Error('No image data returned');
+      }
+
+      // Update record with image data
+      await database.updateEmbeddedImage(imageId, {
+        imageData: result.base64,
+        status: 'complete',
+      });
+
+      // If this was a portrait generation, save to character
+      if (scene.generatePortrait && scene.characters.length > 0) {
+        const charName = scene.characters[0];
+        const character = presentCharacters.find(
+          c => c.name.toLowerCase() === charName.toLowerCase()
+        );
+        if (character) {
+          await database.updateCharacter(character.id, {
+            portrait: result.base64,
+          });
+          log('Saved portrait to character', { characterId: character.id, name: charName });
+        }
+      }
+
+      log('Analyzed image generated successfully', { imageId });
+      emitImageReady(imageId, entryId, true);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      log('Analyzed image generation failed', { imageId, error: errorMessage });
+
+      await database.updateEmbeddedImage(imageId, {
+        status: 'failed',
+        errorMessage,
+      });
+
+      emitImageReady(imageId, entryId, false);
+    }
+  }
+
+  /**
+   * Get the style prompt for the selected style ID.
+   */
+  private getStylePrompt(styleId: string): string {
+    try {
+      const promptContext: PromptContext = {
+        mode: 'adventure',
+        pov: 'second',
+        tense: 'present',
+        protagonistName: '',
+      };
+      const customized = promptService.getPrompt(styleId, promptContext);
+      if (customized) {
+        return customized;
+      }
+    } catch {
+      // Template not found, use fallback
+    }
+
+    const defaultStyles: Record<string, string> = {
+      'image-style-soft-anime': 'Soft cel-shading with gentle gradients. Muted pastel palette with warm highlights. Dreamy, ethereal atmosphere. Delicate linework with minimal harsh shadows. Subtle lighting effects, soft bokeh. Clean composition with breathing room. Anime-inspired but refined, elegant aesthetic.',
+      'image-style-semi-realistic': 'Semi-realistic anime art with refined, detailed rendering. Realistic proportions with anime influence. Detailed hair strands, subtle skin tones, fabric folds. Naturalistic lighting with clear direction and soft falloff. Cinematic composition with depth of field. Rich, slightly desaturated colors with intentional color grading. Painterly quality with polished edges. Atmospheric and grounded mood.',
+      'image-style-photorealistic': 'Photorealistic digital art. True-to-life rendering with natural lighting. Detailed textures, accurate proportions. Professional photography aesthetic. Cinematic depth of field. High dynamic range. Realistic materials and surfaces.',
+    };
+
+    return defaultStyles[styleId] || defaultStyles['image-style-soft-anime'];
   }
 
   // ===== Translation Methods (All Stubbed) =====

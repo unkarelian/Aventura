@@ -14,6 +14,12 @@ export {
   type InlineImageContext,
 } from './InlineImageService';
 
+// Image analysis service (analyzed/agent mode)
+export {
+  ImageAnalysisService,
+  type ImageAnalysisContext,
+} from './ImageAnalysisService';
+
 // Model listing utilities
 export {
   listImageModels,

@@ -19,6 +19,7 @@ import { AgenticRetrievalService } from '../retrieval/AgenticRetrievalService';
 import { TimelineFillService } from '../retrieval/TimelineFillService';
 import { EntryRetrievalService, getEntryRetrievalConfigFromSettings } from '../retrieval/EntryRetrievalService';
 import { TranslationService } from '../utils/TranslationService';
+import { ImageAnalysisService } from '../image/ImageAnalysisService';
 
 /**
  * Factory class for creating AI services.
@@ -147,6 +148,15 @@ export class ServiceFactory {
   createTranslationService(type: 'narration' | 'input' | 'ui' | 'suggestions' | 'actionChoices' | 'wizard'): TranslationService {
     const presetId = settings.getServicePresetId(`translation:${type}`);
     return new TranslationService(presetId);
+  }
+
+  /**
+   * Create an image analysis service instance.
+   * Used for "analyzed" mode where LLM identifies imageable scenes in narrative.
+   */
+  createImageAnalysisService(): ImageAnalysisService {
+    const presetId = settings.getServicePresetId('imageAnalysis');
+    return new ImageAnalysisService(presetId);
   }
 }
 
